@@ -37,6 +37,17 @@
         </header>
 
         <main>
+            <!-- NOVO: Seção para atualizar o brain.json -->
+            <fieldset id="brainModule">
+                <legend>🧠 Atualizar 'Cérebro' da IA</legend>
+                <div class="form-section">
+                    <label for="brainFileUpload">📁 Enviar novo arquivo JSON com informações da franquia</label>
+                    <input type="file" id="brainFileUpload" accept=".json" />
+                    <button id="uploadBrainFileBtn" class="btn">Enviar e Atualizar</button>
+                    <p class="text-sm text-gray-500 mt-1">Este arquivo será mesclado com o 'brain.json' atual no banco de dados.</p>
+                </div>
+            </fieldset>
+
             <fieldset id="meetingsModule">
                 <legend>Diário de Reuniões de Pais</legend>
                 <div class="form-section">
