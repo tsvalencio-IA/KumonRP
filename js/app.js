@@ -63,6 +63,9 @@ const App = {
             reportHistory: document.getElementById('reportHistory'),
             performanceHistory: document.getElementById('performanceHistory'),
             studentAnalysisContent: document.getElementById('student-analysis-content'),
+            // NOVO: Elementos para brain.json
+            brainFileUpload: document.getElementById('brainFileUpload'),
+            uploadBrainFileBtn: document.getElementById('uploadBrainFileBtn'),
         };
     },
     addEventListeners() {
@@ -75,6 +78,8 @@ const App = {
         this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI());
         this.elements.viewReportBtn.addEventListener('click', () => this.showReport());
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
+        // NOVO: Evento para upload do brain.json
+        this.elements.uploadBrainFileBtn.addEventListener('click', () => this.handleBrainFileUpload());
         // Alunos
         this.elements.addStudentBtn.addEventListener('click', () => this.openStudentModal());
         this.elements.studentSearch.addEventListener('input', () => this.renderStudentList());
@@ -153,9 +158,9 @@ const App = {
                 throw new Error('Nenhum áudio encontrado para processar.');
             }
 
-            // Obter brain.json do Firebase
-            const brainData = await this.fetchData('gestores', 'brain');
-            if (!brainData || !brainData.brain) {
+            // Obter brain.json do Firebase (ATUALIZADO)
+            const brainData = await this.fetchBrainData();
+            if (!brainData) {
                 throw new Error('Dados do "brain.json" não encontrados no Firebase. O modelo não pode operar sem o contexto dos alunos.');
             }
 
@@ -163,7 +168,7 @@ const App = {
             const cloudinaryUrl = await this.uploadAudioToCloudinary(audioBlob);
 
             // Obter transcrição e análise do Gemini
-            const analysis = await this.callGeminiForAnalysis(cloudinaryUrl, brainData.brain);
+            const analysis = await this.callGeminiForAnalysis(cloudinaryUrl, brainData);
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -221,7 +226,7 @@ O áudio foi gravado em uma reunião de pais. Siga rigorosamente as diretrizes a
 5. **Requer Validação Humana**: Se houver ambiguidades ou dados insuficientes, marque "requer_validacao_humana: true".
 6. **Confiança**: Inclua "confidence" (0.0-1.0) para cada inferência. Se < 0.7, marque "requer_validacao_humana".
 
-O "brain.json" contém os seguintes alunos (use para fuzzy matching e contexto):
+O "brain.json" contém os seguintes alunos e informações (use para fuzzy matching e contexto):
 ${JSON.stringify(brainData, null, 2)}
 
 Processar o áudio em: ${audioUrl}
@@ -340,6 +345,90 @@ Gere um JSON com os seguintes campos exatos:
         if (docRef) await docRef.set(data, { merge: true });
     },
     // =====================================================================
+    // ======================== NOVO: GESTÃO DO BRAIN.JSON =================
+    // =====================================================================
+    async fetchBrainData() {
+        // Busca o documento 'brain' na coleção 'gestores/{userId}/gestores'
+        // Este é o local onde o 'brain.json' é mantido
+        const brainDocRef = this.state.db.collection('gestores').doc(this.state.userId).collection('gestores').doc('brain');
+        const doc = await brainDocRef.get();
+        if (doc.exists) {
+            return doc.data().brain || {};
+        } else {
+            // Se não existir, retorna um objeto vazio
+            console.warn("Documento 'brain' não encontrado no Firebase. O modelo não terá contexto.");
+            return {};
+        }
+    },
+    async saveBrainData(brainData) {
+        // Salva o objeto 'brainData' no documento 'brain' na coleção 'gestores/{userId}/gestores'
+        const brainDocRef = this.state.db.collection('gestores').doc(this.state.userId).collection('gestores').doc('brain');
+        await brainDocRef.set({ brain: brainData }, { merge: true });
+    },
+    async handleBrainFileUpload() {
+        const fileInput = this.elements.brainFileUpload;
+        if (!fileInput.files || fileInput.files.length === 0) {
+            alert('Por favor, selecione um arquivo JSON para enviar.');
+            return;
+        }
+
+        const file = fileInput.files[0];
+        if (!file.name.toLowerCase().endsWith('.json')) {
+            alert('Por favor, selecione um arquivo com extensão .json.');
+            return;
+        }
+
+        try {
+            const fileContent = await file.text();
+            let newBrainData;
+            try {
+                newBrainData = JSON.parse(fileContent);
+            } catch (e) {
+                throw new Error('O arquivo selecionado não é um JSON válido.');
+            }
+
+            // Busca o brain.json atual no Firebase
+            let currentBrainData = await this.fetchBrainData();
+
+            // Mescla os dados do arquivo enviado com os dados atuais
+            // Isso preserva os dados antigos e adiciona/sobrescreve com os novos
+            const mergedBrainData = this.deepMerge(currentBrainData, newBrainData);
+
+            // Salva o brain.json mesclado de volta no Firebase
+            await this.saveBrainData(mergedBrainData);
+
+            alert('Arquivo JSON enviado e "brain.json" atualizado com sucesso no Firebase!');
+
+            // Limpa o campo de upload
+            fileInput.value = '';
+
+        } catch (error) {
+            console.error('Erro ao processar o arquivo JSON:', error);
+            alert(`Erro ao processar o arquivo: ${error.message}`);
+        }
+    },
+    deepMerge(target, source) {
+        // Função auxiliar para mesclar objetos de forma profunda
+        const output = { ...target };
+        if (this.isObject(target) && this.isObject(source)) {
+            Object.keys(source).forEach(key => {
+                if (this.isObject(source[key])) {
+                    if (!(key in target)) {
+                        Object.assign(output, { [key]: source[key] });
+                    } else {
+                        output[key] = this.deepMerge(target[key], source[key]);
+                    }
+                } else {
+                    Object.assign(output, { [key]: source[key] });
+                }
+            });
+        }
+        return output;
+    },
+    isObject(item) {
+        return (item && typeof item === 'object' && !Array.isArray(item));
+    },
+    // =====================================================================
     // ======================= MÓDULO DE ALUNOS (REVISADO) =================
     // =====================================================================
     async loadStudents() {
@@ -347,6 +436,8 @@ Gere um JSON com os seguintes campos exatos:
             const doc = await this.getDocRef('alunos', 'lista_alunos').get();
             this.state.students = doc.exists ? doc.data().students || {} : {};
             this.renderStudentList();
+            // ATUALIZAÇÃO: Sincroniza o brain.json com a lista de alunos carregada
+            await this.updateBrainFromStudents();
         } catch (error) {
             console.error('Erro ao carregar alunos:', error);
             alert('Não foi possível carregar os dados dos alunos.');
@@ -445,6 +536,8 @@ Gere um JSON com os seguintes campos exatos:
                 this.elements.modalTitle.textContent = `📋 Ficha de ${studentData.name}`;
                 this.elements.deleteStudentBtn.style.display = 'block';
             }
+            // ATUALIZAÇÃO: Sincroniza o brain.json após salvar o aluno
+            await this.updateBrainFromStudents();
             alert('Aluno salvo com sucesso!');
         } catch (error) {
             console.error('Erro ao salvar aluno:', error);
@@ -460,11 +553,45 @@ Gere um JSON com os seguintes campos exatos:
             await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
             this.renderStudentList();
             this.closeStudentModal();
+            // ATUALIZAÇÃO: Sincroniza o brain.json após excluir o aluno
+            await this.updateBrainFromStudents();
             alert('Aluno excluído com sucesso!');
         } catch (error) {
             console.error('Erro ao excluir aluno:', error);
             alert('Erro ao excluir aluno. Tente novamente.');
         }
+    },
+    // NOVA FUNÇÃO: Atualiza o brain.json com base na lista de alunos atual
+    async updateBrainFromStudents() {
+        // Busca o brain.json atual
+        let currentBrainData = await this.fetchBrainData();
+
+        // Cria uma cópia do brain para modificação
+        let updatedBrain = { ...currentBrainData };
+
+        // Atualiza ou adiciona os alunos do state.students no brain
+        if (!updatedBrain.alunos) {
+            updatedBrain.alunos = {};
+        }
+        for (const [id, student] of Object.entries(this.state.students)) {
+            // Mapeia os campos do aluno para o formato do brain.json
+            updatedBrain.alunos[id] = {
+                id: id,
+                nome: student.name,
+                responsavel: student.responsible,
+                contato: student.contact,
+                estagio_matematica: student.mathStage,
+                estagio_portugues: student.portStage,
+                estagio_ingles: student.engStage,
+                historico: student.performanceLog, // Exemplo: pode ser mais específico
+                metas: {}, // Pode ser adicionado ao formulário
+                observacoes: [] // Pode ser adicionado ao formulário ou histórico
+            };
+        }
+
+        // Salva o brain.json atualizado no Firebase
+        await this.saveBrainData(updatedBrain);
+        console.log("brain.json atualizado com base nos alunos da plataforma.");
     },
     loadStudentHistories(studentId) {
         const student = this.state.students[studentId];
@@ -508,6 +635,8 @@ Gere um JSON com os seguintes campos exatos:
             await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
             formElement.reset();
+            // ATUALIZAÇÃO: Sincroniza o brain.json após adicionar histórico (opcional, mas pode ser útil)
+            await this.updateBrainFromStudents();
         } catch (error) {
             console.error('Erro ao salvar histórico:', error);
             alert('Falha ao salvar o registro.');
@@ -556,10 +685,12 @@ Gere um JSON com os seguintes campos exatos:
         try {
             await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
             this.renderHistory(historyType, student[historyType]);
+            // ATUALIZAÇÃO: Sincroniza o brain.json após excluir histórico (opcional)
+            await this.updateBrainFromStudents();
         } catch (error) {
             alert('Falha ao excluir o registro.');
             console.error(error);
-            this.loadStudents();
+            this.loadStudents(); // Recarrega tudo se der errado
         }
     },
     async analyzeStudent(studentId) {
@@ -645,7 +776,7 @@ Para confirmar, digite 'APAGAR TUDO' e clique em OK.");
     async hardResetUserData() {
         alert("A iniciar o reset completo do sistema. A página será recarregada ao concluir.");
         try {
-            const collections = ['diario', 'inventario', 'alunos', 'gestores'];
+            const collections = ['diario', 'inventario', 'alunos', 'gestores']; // Adiciona 'gestores' para apagar o brain também
             for (const collectionName of collections) {
                 const querySnapshot = await this.state.db.collection('gestores').doc(this.state.userId).collection(collectionName).get();
                 if (querySnapshot.empty) continue;
