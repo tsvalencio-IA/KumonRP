@@ -1,0 +1,238 @@
+{
+  "alunos": {
+    "aluno_1": {
+      "id": "aluno_1",
+      "nome": "Carlos Silva",
+      "responsavel": "Maria Silva",
+      "contato": "(17) 99999-9999",
+      "estagio_matematica": "D150",
+      "estagio_portugues": "CII 100",
+      "estagio_ingles": "G 50",
+      "historico": {
+        "ultima_avaliacao": "2025-10-20",
+        "notas": [
+          {
+            "disciplina": "Matemática",
+            "data": "2025-10-20",
+            "nota": 8.5
+          },
+          {
+            "disciplina": "Português",
+            "data": "2025-10-15",
+            "nota": 7.2
+          }
+        ],
+        "repeticoes": 2,
+        "previsoes_media": "15min",
+        "correcoes_100": 18
+      },
+      "metas": {
+        "meta_atual": "Avançar para estágio E em Matemática até 31/12/2025",
+        "data_inicio_meta": "2025-11-01",
+        "data_fim_meta": "2025-12-31"
+      },
+      "observacoes": [
+        {
+          "data": "2025-10-25",
+          "tipo": "elogio",
+          "descricao": "Excelente foco e concentração na aula de matemática."
+        },
+        {
+          "data": "2025-10-18",
+          "tipo": "alerta",
+          "descricao": "Parece cansado e com dificuldade de concentração."
+        }
+      ]
+    },
+    "aluno_2": {
+      "id": "aluno_2",
+      "nome": "Ana Beatriz",
+      "responsavel": "Roberto Oliveira",
+      "contato": "(17) 98888-8888",
+      "estagio_matematica": "G 200",
+      "estagio_portugues": "D 180",
+      "estagio_ingles": "J 100",
+      "historico": {
+        "ultima_avaliacao": "2025-10-22",
+        "notas": [
+          {
+            "disciplina": "Matemática",
+            "data": "2025-10-22",
+            "nota": 9.0
+          },
+          {
+            "disciplina": "Inglês",
+            "data": "2025-10-10",
+            "nota": 8.7
+          }
+        ],
+        "repeticoes": 0,
+        "previsoes_media": "12min",
+        "correcoes_100": 25
+      },
+      "metas": {
+        "meta_atual": "Concluir estágio G em Matemática até 15/11/2025",
+        "data_inicio_meta": "2025-11-01",
+        "data_fim_meta": "2025-11-15"
+      },
+      "observacoes": [
+        {
+          "data": "2025-10-20",
+          "tipo": "elogio",
+          "descricao": "Demonstrou grande evolução no estágio de matemática."
+        }
+      ]
+    },
+    "aluno_3": {
+      "id": "aluno_3",
+      "nome": "Pedro Santos",
+      "responsavel": "Fernanda Santos",
+      "contato": "(17) 97777-7777",
+      "estagio_matematica": "4A 100",
+      "estagio_portugues": "3A 150",
+      "estagio_ingles": "F 80",
+      "historico": {
+        "ultima_avaliacao": "2025-10-18",
+        "notas": [
+          {
+            "disciplina": "Português",
+            "data": "2025-10-18",
+            "nota": 6.8
+          }
+        ],
+        "repeticoes": 3,
+        "previsoes_media": "20min",
+        "correcoes_100": 12
+      },
+      "metas": {
+        "meta_atual": "Reduzir número de repetições em Português até 30/11/2025",
+        "data_inicio_meta": "2025-11-01",
+        "data_fim_meta": "2025-11-30"
+      },
+      "observacoes": [
+        {
+          "data": "2025-10-22",
+          "tipo": "alerta",
+          "descricao": "Apresentou dificuldade com novos blocos de português."
+        }
+      ]
+    },
+    "aluno_4": {
+      "id": "aluno_4",
+      "nome": "Julia Costa",
+      "responsavel": "Paulo Costa",
+      "contato": "(17) 96666-6666",
+      "estagio_matematica": "K 300",
+      "estagio_portugues": "G 250",
+      "estagio_ingles": "M 150",
+      "historico": {
+        "ultima_avaliacao": "2025-10-25",
+        "notas": [
+          {
+            "disciplina": "Matemática",
+            "data": "2025-10-25",
+            "nota": 9.5
+          },
+          {
+            "disciplina": "Inglês",
+            "data": "2025-10-15",
+            "nota": 8.9
+          }
+        ],
+        "repeticoes": 0,
+        "previsoes_media": "10min",
+        "correcoes_100": 30
+      },
+      "metas": {
+        "meta_atual": "Manter ritmo de avanço constante em todos os estágios",
+        "data_inicio_meta": "2025-11-01",
+        "data_fim_meta": "2026-01-31"
+      },
+      "observacoes": [
+        {
+          "data": "2025-10-25",
+          "tipo": "elogio",
+          "descricao": "Excelente desempenho em todos os estágios."
+        }
+      ]
+    },
+    "aluno_5": {
+      "id": "aluno_5",
+      "nome": "Lucas Almeida",
+      "responsavel": "Carla Almeida",
+      "contato": "(17) 95555-5555",
+      "estagio_matematica": "B 200",
+      "estagio_portugues": "AII 180",
+      "estagio_ingles": "E 120",
+      "historico": {
+        "ultima_avaliacao": "2025-10-23",
+        "notas": [
+          {
+            "disciplina": "Matemática",
+            "data": "2025-10-23",
+            "nota": 7.5
+          },
+          {
+            "disciplina": "Português",
+            "data": "2025-10-10",
+            "nota": 8.0
+          }
+        ],
+        "repeticoes": 1,
+        "previsoes_media": "18min",
+        "correcoes_100": 15
+      },
+      "metas": {
+        "meta_atual": "Avançar para estágio C em Matemática até 15/12/2025",
+        "data_inicio_meta": "2025-11-01",
+        "data_fim_meta": "2025-12-15"
+      },
+      "observacoes": [
+        {
+          "data": "2025-10-20",
+          "tipo": "elogio",
+          "descricao": "Mostrou melhora significativa em matemática."
+        }
+      ]
+    },
+    "aluno_6": {
+      "id": "aluno_6",
+      "nome": "Mariana Ribeiro",
+      "responsavel": "Ricardo Ribeiro",
+      "contato": "(17) 94444-4444",
+      "estagio_matematica": "H 150",
+      "estagio_portugues": "E 200",
+      "estagio_ingles": "I 100",
+      "historico": {
+        "ultima_avaliacao": "2025-10-24",
+        "notas": [
+          {
+            "disciplina": "Inglês",
+            "data": "2025-10-24",
+            "nota": 7.8
+          },
+          {
+            "disciplina": "Matemática",
+            "data": "2025-10-12",
+            "nota": 8.2
+          }
+        ],
+        "repeticoes": 0,
+        "previsoes_media": "14min",
+        "correcoes_100": 22
+      },
+      "metas": {
+        "meta_atual": "Avançar estágio de Inglês até 31/01/2026",
+        "data_inicio_meta": "2025-11-01",
+        "data_fim_meta": "2026-01-31"
+      },
+      "observacoes": [
+        {
+          "data": "2025-10-24",
+          "tipo": "elogio",
+          "descricao": "Demonstrou grande interesse em aprimorar o inglês."
+        }
+      ]
+    }
+  }
+}
