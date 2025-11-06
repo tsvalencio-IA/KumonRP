@@ -4,21 +4,22 @@
 // =====================================================================
 // =====================================================================
 const firebaseConfig = {
-    apiKey: "AIzaSyDFrbeT1ZLXwHRZCu9KKY2cSYMMSQTOrmE",
-    authDomain: "comando-kumon-app-192eb.firebaseapp.com",
-    projectId: "comando-kumon-app-192eb",
-    storageBucket: "comando-kumon-app-192eb.firebasestorage.app",
-    messagingSenderId: "1061275561465",
-    appId: "1:1061275561465:web:6ee3bd8e95e2716796e128"
+    apiKey: "AIzaSyBc4bPhHBhZ-6wL7DUBGUhEtt9wt8BcbtE",
+    authDomain: "kumon-c63a2.firebaseapp.com",
+    databaseURL: "https://kumon-c63a2-default-rtdb.firebaseio.com",
+    projectId: "kumon-c63a2",
+    storageBucket: "kumon-c63a2.firebasestorage.app",
+    messagingSenderId: "1087736846603",
+    appId: "1:1087736846603:web:261294f3b5b28a3b792a0e"
   };
 
 // --- Configuração do Cloudinary (PREENCHA ESTES VALORES) ---
 const cloudinaryConfig = {
-    cloudName: "dpaayfwlj",
-    uploadPreset: "kumon-ia" // Vamos criar este no próximo passo
+    cloudName: "djtiaygrs",
+    uploadPreset: "kumon_ia" // Vamos criar este no próximo passo
 };
 
 // --- Configuração da GEMINI API (APENAS PARA FRONTEND - USO DEMO) ---
 // AVISO: Esta chave será exposta no frontend. Use apenas para demonstração interna.
 // Após aprovação, remova esta chave e migre para um backend proxy seguro.
-window.GEMINI_API_KEY = "<COLOQUE_AQUI_SUA_GEMINI_API_KEY>"; // Ex: "AIzaSy..."
+window.GEMINI_API_KEY = "AIzaSyAYcLrnWIYEIjNrXm9wRDM0aJZVqmn_JqI"; // Ex: "AIzaSy..."
