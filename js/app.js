@@ -1,0 +1,663 @@
+// App.js - Plataforma de Diário de Reuniões Kumon
+const App = {
+    state: {
+        userId: null,
+        db: null,
+        students: {},
+        currentStudentId: null,
+        mediaRecorder: null,
+        recordingChunks: [],
+        recordingInterval: null,
+        recordingTime: 0,
+        reportData: null
+    },
+    elements: {},
+    // =====================================================================
+    // ======================== INICIALIZAÇÃO E SETUP ======================
+    // =====================================================================
+    init(user, firestoreInstance) {
+        document.getElementById('loading-overlay').style.display = 'none';
+        document.getElementById('app-container').classList.remove('hidden');
+        this.state.userId = user.uid;
+        this.state.db = firestoreInstance;
+        document.getElementById('userEmail').textContent = user.email;
+        this.mapDOMElements();
+        this.addEventListeners();
+        this.loadStudents();
+        this.setupRecording();
+    },
+    mapDOMElements() {
+        this.elements = {
+            // Geral
+            logoutButton: document.getElementById('logout-button'),
+            systemOptionsBtn: document.getElementById('system-options-btn'),
+            // Diário de Reuniões
+            meetingDate: document.getElementById('meetingDate'),
+            audioUpload: document.getElementById('audioUpload'),
+            startRecordingBtn: document.getElementById('startRecordingBtn'),
+            recordingStatus: document.getElementById('recordingStatus'),
+            recordingTime: document.getElementById('recordingTime'),
+            additionalNotes: document.getElementById('additionalNotes'),
+            processAudioBtn: document.getElementById('processAudioBtn'),
+            viewReportBtn: document.getElementById('viewReportBtn'),
+            // Relatórios
+            reportSection: document.getElementById('reportSection'),
+            reportContent: document.getElementById('reportContent'),
+            downloadReportBtn: document.getElementById('downloadReportBtn'),
+            // Módulo de Alunos
+            addStudentBtn: document.getElementById('addStudentBtn'),
+            studentSearch: document.getElementById('studentSearch'),
+            studentList: document.getElementById('student-list'),
+            studentModal: document.getElementById('studentModal'),
+            modalTitle: document.getElementById('modalTitle'),
+            closeModalBtn: document.getElementById('closeModalBtn'),
+            studentForm: document.getElementById('studentForm'),
+            studentIdInput: document.getElementById('studentId'),
+            saveStudentBtn: document.getElementById('saveStudentBtn'),
+            deleteStudentBtn: document.getElementById('deleteStudentBtn'),
+            refreshAnalysisBtn: document.getElementById('refreshAnalysisBtn'),
+            programmingForm: document.getElementById('programmingForm'),
+            reportForm: document.getElementById('reportForm'),
+            performanceForm: document.getElementById('performanceForm'),
+            programmingHistory: document.getElementById('programmingHistory'),
+            reportHistory: document.getElementById('reportHistory'),
+            performanceHistory: document.getElementById('performanceHistory'),
+            studentAnalysisContent: document.getElementById('student-analysis-content'),
+        };
+    },
+    addEventListeners() {
+        // Geral
+        this.elements.logoutButton.addEventListener('click', () => firebase.auth().signOut());
+        this.elements.systemOptionsBtn.addEventListener('click', () => this.promptForReset());
+        // Diário de Reuniões
+        this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
+        this.elements.startRecordingBtn.addEventListener('click', () => this.toggleRecording());
+        this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI());
+        this.elements.viewReportBtn.addEventListener('click', () => this.showReport());
+        this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
+        // Alunos
+        this.elements.addStudentBtn.addEventListener('click', () => this.openStudentModal());
+        this.elements.studentSearch.addEventListener('input', () => this.renderStudentList());
+        this.elements.closeModalBtn.addEventListener('click', () => this.closeStudentModal());
+        this.elements.saveStudentBtn.addEventListener('click', () => this.saveStudent());
+        this.elements.deleteStudentBtn.addEventListener('click', () => this.deleteStudent());
+        this.elements.refreshAnalysisBtn.addEventListener('click', () => this.analyzeStudent(this.state.currentStudentId));
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab)));
+        this.elements.programmingForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'programmingHistory', this.elements.programmingForm));
+        this.elements.reportForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'reportHistory', this.elements.reportForm));
+        this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm));
+        this.elements.studentModal.addEventListener('click', (e) => { if (e.target === this.elements.studentModal) this.closeStudentModal(); });
+    },
+    setupRecording() {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    this.state.mediaRecorder = new MediaRecorder(stream);
+                    this.state.mediaRecorder.ondataavailable = event => {
+                        this.state.recordingChunks.push(event.data);
+                    };
+                    this.state.mediaRecorder.onstop = () => {
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+                })
+                .catch(err => {
+                    console.error('Erro ao acessar microfone:', err);
+                    alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
+                });
+        } else {
+            alert('Seu navegador não suporta gravação de áudio.');
+        }
+    },
+    toggleRecording() {
+        if (!this.state.mediaRecorder) return;
+
+        if (this.state.mediaRecorder.state === 'recording') {
+            this.state.mediaRecorder.stop();
+            clearInterval(this.state.recordingInterval);
+            this.elements.recordingStatus.classList.add('hidden');
+            this.elements.processAudioBtn.disabled = false;
+        } else {
+            this.state.recordingChunks = [];
+            this.state.recordingTime = 0;
+            this.state.mediaRecorder.start();
+            this.elements.recordingStatus.classList.remove('hidden');
+            this.elements.processAudioBtn.disabled = true;
+            this.state.recordingInterval = setInterval(() => {
+                this.state.recordingTime++;
+                const minutes = Math.floor(this.state.recordingTime / 60).toString().padStart(2, '0');
+                const seconds = (this.state.recordingTime % 60).toString().padStart(2, '0');
+                this.elements.recordingTime.textContent = `${minutes}:${seconds}`;
+            }, 1000);
+        }
+    },
+    handleFileUpload() {
+        const file = this.elements.audioUpload.files[0];
+        if (file) {
+            this.elements.processAudioBtn.disabled = false;
+        }
+    },
+    async processAudioWithAI() {
+        this.elements.reportContent.textContent = 'Processando áudio com IA...';
+        this.elements.reportSection.classList.remove('hidden');
+        this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
+
+        try {
+            const audioFile = this.elements.audioUpload.files[0];
+            let audioBlob = audioFile;
+
+            if (!audioFile && this.state.mediaRecorder && this.state.recordingChunks.length > 0) {
+                audioBlob = new Blob(this.state.recordingChunks, { type: 'audio/webm' });
+            }
+
+            if (!audioBlob) {
+                throw new Error('Nenhum áudio encontrado para processar.');
+            }
+
+            // Obter brain.json do Firebase
+            const brainData = await this.fetchData('gestores', 'brain');
+            if (!brainData || !brainData.brain) {
+                throw new Error('Dados do "brain.json" não encontrados no Firebase. O modelo não pode operar sem o contexto dos alunos.');
+            }
+
+            // Upload para Cloudinary
+            const cloudinaryUrl = await this.uploadAudioToCloudinary(audioBlob);
+
+            // Obter transcrição e análise do Gemini
+            const analysis = await this.callGeminiForAnalysis(cloudinaryUrl, brainData.brain);
+
+            // Salvar relatório no estado e exibir
+            this.state.reportData = analysis;
+            this.renderReport(analysis);
+
+        } catch (error) {
+            console.error('Erro ao processar áudio:', error);
+            this.elements.reportContent.textContent = `Erro ao processar áudio: ${error.message}`;
+        }
+    },
+    async uploadAudioToCloudinary(audioBlob) {
+        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
+            throw new Error('Configuração do Cloudinary não encontrada em JTS/config.js');
+        }
+
+        // Converter blob para File se necessário
+        if (!(audioBlob instanceof File)) {
+            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: 'audio/webm' });
+        }
+
+        const formData = new FormData();
+        formData.append('file', audioBlob);
+        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
+        formData.append('folder', `${this.state.userId}/reunioes`);
+        formData.append('resource_type', 'raw');
+
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
+        }
+
+        const result = await response.json();
+        return result.secure_url;
+    },
+    async callGeminiForAnalysis(audioUrl, brainData) {
+        if (!window.GEMINI_API_KEY) {
+            throw new Error('GEMINI_API_KEY não encontrada em JTS/config.js. O sistema não pode processar o áudio sem uma chave válida.');
+        }
+
+        // Preparar prompt para o Gemini
+        const prompt = `
+Você é um assistente especializado em processar áudios de reuniões de pais do Método Kumon. Sua tarefa é gerar um relatório estruturado em JSON com base no áudio fornecido e nos dados do "brain.json" que contém informações sobre os alunos.
+
+O áudio foi gravado em uma reunião de pais. Siga rigorosamente as diretrizes abaixo:
+
+1. **NÃO INVENTE DADOS**: Toda afirmação sobre um aluno deve derivar explicitamente do áudio ou do "brain.json". Se algo não estiver no áudio ou no "brain.json", avise que não há dados e peça confirmação humana.
+2. **Fuzzy Matching**: Identifique menções a alunos usando fuzzy matching com os nomes no "brain.json".
+3. **Transcrição & Diarização**: Transcreva em português BR, segmentando por falante.
+4. **Resumo Executivo**: Cada frase deve indicar a fonte (ex: "baseado em brain.json.alunos.aluno_1.historico").
+5. **Requer Validação Humana**: Se houver ambiguidades ou dados insuficientes, marque "requer_validacao_humana: true".
+6. **Confiança**: Inclua "confidence" (0.0-1.0) para cada inferência. Se < 0.7, marque "requer_validacao_humana".
+
+O "brain.json" contém os seguintes alunos (use para fuzzy matching e contexto):
+${JSON.stringify(brainData, null, 2)}
+
+Processar o áudio em: ${audioUrl}
+
+Gere um JSON com os seguintes campos exatos:
+{
+  "meta": {
+    "created_at": "ISO_DATE",
+    "sala_id": "ID_DA_SALA",
+    "audio_url": "URL_DO_AUDIO",
+    "duration_s": "DURAÇÃO_EM_SEGUNDOS",
+    "parts": 1
+  },
+  "consentimentos": [],
+  "transcription_raw": "string completa",
+  "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
+  "mentions_alunos": [{"aluno_id": "string", "nome": "string", "context": "string", "confidence": "number"}],
+  "resumo_executivo": "string",
+  "decisoes_sugeridas": [{"texto": "string", "responsavel_sugerido": "string", "prazo_sugerido_days": "number", "source_evidence": "string"}],
+  "itens_acao": [{"descricao": "string", "responsavel": "string", "prazo_days": "number", "prioridade": "string"}],
+  "dores_familia": [{"familia_nome": "string", "dor_texto": "string", "evidencia_texto": "string", "confidence": "number"}],
+  "dores_unidade": [{"dor_texto": "string", "impacto": "string", "evidencia": "string"}],
+  "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string", "evidencia": "string"}],
+  "audit_log": [{"action": "string", "by": "model|user", "timestamp": "ISO_DATE", "details": "string"}],
+  "requer_validacao_humana": true|false,
+  "sources": ["string"]
+}
+        `;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${window.GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: prompt
+                    }]
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Erro da API Gemini: ${errorData.error?.message || 'Erro desconhecido'}`);
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!text) {
+            throw new Error('Gemini não retornou um texto válido.');
+        }
+
+        // Extrair JSON do retorno
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+        let jsonStr = text;
+        if (jsonMatch) {
+            jsonStr = jsonMatch[1];
+        }
+
+        try {
+            return JSON.parse(jsonStr);
+        } catch (e) {
+            console.error('Erro ao parsear JSON do Gemini:', e);
+            console.error('Texto retornado:', text);
+            throw new Error('O modelo retornou um JSON inválido. Verifique o console para mais detalhes.');
+        }
+    },
+    renderReport(reportData) {
+        this.elements.reportContent.textContent = JSON.stringify(reportData, null, 2);
+    },
+    showReport() {
+        if (this.state.reportData) {
+            this.renderReport(this.state.reportData);
+            this.elements.reportSection.classList.remove('hidden');
+            this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
+        } else {
+            alert('Nenhum relatório disponível. Processar o áudio primeiro.');
+        }
+    },
+    downloadReport() {
+        if (!this.state.reportData) {
+            alert('Nenhum relatório para download.');
+            return;
+        }
+
+        const content = JSON.stringify(this.state.reportData, null, 2);
+        const filename = `Relatorio_Reuniao_${this.elements.meetingDate.value || new Date().toISOString().split('T')[0]}.json`;
+        const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+    // =====================================================================
+    // ======================== LÓGICA DE DADOS (CORE) =====================
+    // =====================================================================
+    getDocRef(collection, docId) {
+        if (!this.state.userId) return null;
+        return this.state.db.collection('gestores').doc(this.state.userId).collection(collection).doc(docId);
+    },
+    async fetchData(collection, docId) {
+        const docRef = this.getDocRef(collection, docId);
+        if (!docRef) return null;
+        const doc = await docRef.get();
+        return doc.exists ? doc.data() : null;
+    },
+    async saveData(collection, docId, data) {
+        const docRef = this.getDocRef(collection, docId);
+        if (docRef) await docRef.set(data, { merge: true });
+    },
+    // =====================================================================
+    // ======================= MÓDULO DE ALUNOS (REVISADO) =================
+    // =====================================================================
+    async loadStudents() {
+        try {
+            const doc = await this.getDocRef('alunos', 'lista_alunos').get();
+            this.state.students = doc.exists ? doc.data().students || {} : {};
+            this.renderStudentList();
+        } catch (error) {
+            console.error('Erro ao carregar alunos:', error);
+            alert('Não foi possível carregar os dados dos alunos.');
+        }
+    },
+    renderStudentList() {
+        const searchTerm = this.elements.studentSearch.value.toLowerCase();
+        const filteredStudents = Object.entries(this.state.students).filter(([id, student]) =>
+            student.name.toLowerCase().includes(searchTerm) ||
+            student.responsible.toLowerCase().includes(searchTerm)
+        );
+        if (filteredStudents.length === 0) {
+            this.elements.studentList.innerHTML = `<div class="empty-state"><p>📚 ${searchTerm ? 'Nenhum aluno encontrado.' : 'Nenhum aluno cadastrado.'}</p><p>Clique em "Adicionar Novo Aluno" para começar!</p></div>`;
+            return;
+        }
+        this.elements.studentList.innerHTML = filteredStudents
+            .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+            .map(([id, student]) => `
+                <div class="student-card" onclick="App.openStudentModal('${id}')">
+                    <div class="student-card-header">
+                        <div>
+                            <h3 class="student-name">${student.name}</h3>
+                            <p class="student-responsible">Responsável: ${student.responsible}</p>
+                        </div>
+                    </div>
+                    <div class="student-stages">
+                        ${student.mathStage ? `<div class="stage-item"><span class="stage-label">Mat</span>${student.mathStage}</div>` : ''}
+                        ${student.portStage ? `<div class="stage-item"><span class="stage-label">Port</span>${student.portStage}</div>` : ''}
+                        ${student.engStage ? `<div class="stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+    },
+    openStudentModal(studentId = null) {
+        this.state.currentStudentId = studentId;
+        this.elements.studentModal.classList.remove('hidden');
+        this.elements.studentForm.reset(); // Limpa o formulário sempre ao abrir
+        if (studentId) {
+            const student = this.state.students[studentId];
+            this.elements.modalTitle.textContent = `📋 Ficha de ${student.name}`;
+            this.elements.studentIdInput.value = studentId;
+            document.getElementById('studentName').value = student.name || '';
+            document.getElementById('studentResponsible').value = student.responsible || '';
+            document.getElementById('studentContact').value = student.contact || '';
+            document.getElementById('mathStage').value = student.mathStage || '';
+            document.getElementById('portStage').value = student.portStage || '';
+            document.getElementById('engStage').value = student.engStage || '';
+            this.elements.deleteStudentBtn.style.display = 'block';
+            this.loadStudentHistories(studentId);
+            this.elements.studentAnalysisContent.textContent = 'Clique em "Gerar Nova Análise" para começar.';
+        } else {
+            this.elements.modalTitle.textContent = '👨‍🎓 Adicionar Novo Aluno';
+            this.elements.studentIdInput.value = '';
+            this.elements.deleteStudentBtn.style.display = 'none';
+            this.clearStudentHistories();
+            this.elements.studentAnalysisContent.textContent = 'Salve o aluno para poder gerar uma análise.';
+        }
+        this.switchTab('programming');
+    },
+    closeStudentModal() {
+        this.elements.studentModal.classList.add('hidden');
+        this.state.currentStudentId = null;
+    },
+    switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+    },
+    async saveStudent() {
+        if (!this.elements.studentForm.checkValidity()) {
+            this.elements.studentForm.reportValidity();
+            return;
+        }
+        const studentId = this.elements.studentIdInput.value || Date.now().toString();
+        const studentData = {
+            name: document.getElementById('studentName').value.trim(),
+            responsible: document.getElementById('studentResponsible').value.trim(),
+            contact: document.getElementById('studentContact').value.trim(),
+            mathStage: document.getElementById('mathStage').value.trim(),
+            portStage: document.getElementById('portStage').value.trim(),
+            engStage: document.getElementById('engStage').value.trim(),
+            programmingHistory: this.state.students[studentId]?.programmingHistory || [],
+            reportHistory: this.state.students[studentId]?.reportHistory || [],
+            performanceLog: this.state.students[studentId]?.performanceLog || [],
+            createdAt: this.state.students[studentId]?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        this.state.students[studentId] = studentData;
+        try {
+            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            this.renderStudentList();
+            if (!this.state.currentStudentId) {
+                this.state.currentStudentId = studentId;
+                this.elements.studentIdInput.value = studentId;
+                this.elements.modalTitle.textContent = `📋 Ficha de ${studentData.name}`;
+                this.elements.deleteStudentBtn.style.display = 'block';
+            }
+            alert('Aluno salvo com sucesso!');
+        } catch (error) {
+            console.error('Erro ao salvar aluno:', error);
+            alert('Erro ao salvar aluno. Tente novamente.');
+        }
+    },
+    async deleteStudent() {
+        if (!this.state.currentStudentId) return;
+        const studentName = this.state.students[this.state.currentStudentId].name;
+        if (!confirm(`Tem certeza que deseja excluir o aluno "${studentName}"? Esta ação é irreversível.`)) return;
+        delete this.state.students[this.state.currentStudentId];
+        try {
+            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            this.renderStudentList();
+            this.closeStudentModal();
+            alert('Aluno excluído com sucesso!');
+        } catch (error) {
+            console.error('Erro ao excluir aluno:', error);
+            alert('Erro ao excluir aluno. Tente novamente.');
+        }
+    },
+    loadStudentHistories(studentId) {
+        const student = this.state.students[studentId];
+        if (!student) return this.clearStudentHistories();
+        this.renderHistory('programmingHistory', student.programmingHistory || []);
+        this.renderHistory('reportHistory', student.reportHistory || []);
+        this.renderHistory('performanceLog', student.performanceLog || []);
+    },
+    clearStudentHistories() {
+        this.elements.programmingHistory.innerHTML = '<p>Nenhuma programação registrada.</p>';
+        this.elements.reportHistory.innerHTML = '<p>Nenhum boletim registrado.</p>';
+        this.elements.performanceHistory.innerHTML = '<p>Nenhum registro de desempenho.</p>';
+    },
+    async addHistoryEntry(event, historyType, formElement) {
+        event.preventDefault();
+        if (!this.state.currentStudentId) {
+            alert('É necessário salvar o aluno antes de adicionar registros ao histórico.');
+            return;
+        }
+        const inputs = formElement.querySelectorAll('input, select, textarea');
+        const entry = { id: Date.now().toString(), createdAt: new Date().toISOString() };
+        let isValid = true;
+        inputs.forEach(input => {
+            if (input.required && !input.value) isValid = false;
+            const key = input.id.replace(/^(programming|report|performance)/, '').charAt(0).toLowerCase() + input.id.slice(1).replace(/^(rogramming|eport|erformance)/, '');
+            if(input.type !== 'file') entry[key] = input.value;
+        });
+        if (!isValid) {
+            alert('Por favor, preencha todos os campos obrigatórios.');
+            return;
+        }
+        if (historyType === 'reportHistory') {
+            const fileInput = formElement.querySelector('input[type="file"]');
+            if (fileInput.files.length > 0) {
+                try { entry.fileurl = await this.uploadFileToCloudinary(fileInput.files[0], 'boletins'); } 
+                catch (error) { console.error('Erro no upload:', error); alert('Erro no upload do arquivo.'); }
+            }
+        }
+        this.state.students[this.state.currentStudentId][historyType].push(entry);
+        try {
+            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
+            formElement.reset();
+        } catch (error) {
+            console.error('Erro ao salvar histórico:', error);
+            alert('Falha ao salvar o registro.');
+            this.state.students[this.state.currentStudentId][historyType].pop();
+        }
+    },
+    renderHistory(historyType, historyData) {
+        const container = this.elements[historyType];
+        if (!historyData || historyData.length === 0) {
+            container.innerHTML = `<p>Nenhum registro encontrado.</p>`;
+            return;
+        }
+        container.innerHTML = historyData
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .map(entry => this.createHistoryItemHTML(historyType, entry))
+            .join('');
+    },
+    createHistoryItemHTML(type, entry) {
+        let detailsHTML = '';
+        const date = entry.date ? new Date(entry.date + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'Data Inválida';
+        switch (type) {
+            case 'programmingHistory':
+                detailsHTML = `<div class="history-details"><strong>Material:</strong> ${entry.material || ''}</div>${entry.notes ? `<div class="history-details"><strong>Obs:</strong> ${entry.notes}</div>` : ''}`;
+                break;
+            case 'reportHistory':
+                detailsHTML = `<div class="history-details"><strong>${entry.subject || ''}:</strong> Nota ${entry.grade || 'N/A'}</div>${entry.fileurl ? `<div class="history-file">📎 <a href="${entry.fileurl}" target="_blank">Ver anexo</a></div>` : ''}`;
+                break;
+            case 'performanceLog':
+                detailsHTML = `<div class="history-details">${entry.details || ''}</div>`;
+                break;
+        }
+        return `
+            <div class="history-item">
+                <div class="history-item-header">
+                    <span class="history-date">${date}</span>
+                    <span class="history-type">${entry.type || 'REGISTRO'}</span>
+                </div>
+                ${detailsHTML}
+                <button class="delete-history-btn" onclick="App.deleteHistoryEntry('${type}', '${entry.id}')" title="Excluir">&times;</button>
+            </div>`;
+    },
+    async deleteHistoryEntry(historyType, entryId) {
+        if (!confirm('Tem certeza que deseja excluir este registro do histórico?')) return;
+        const student = this.state.students[this.state.currentStudentId];
+        student[historyType] = student[historyType].filter(entry => entry.id !== entryId);
+        try {
+            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            this.renderHistory(historyType, student[historyType]);
+        } catch (error) {
+            alert('Falha ao excluir o registro.');
+            console.error(error);
+            this.loadStudents();
+        }
+    },
+    async analyzeStudent(studentId) {
+        if (!studentId) return;
+        const analysisContent = this.elements.studentAnalysisContent;
+        analysisContent.textContent = 'Analisando dados do aluno...';
+        const student = this.state.students[studentId];
+        if (!student) {
+            analysisContent.textContent = 'Erro: Dados do aluno não encontrados.';
+            return;
+        }
+        let analysis = `ANÁLISE INTELIGENTE - ${student.name}
+${'='.repeat(50)}
+`;
+        const repetitions = (student.performanceLog || []).filter(e => e.type === 'REPETICAO');
+        if (repetitions.length >= 3) {
+            analysis += `🚨 ALERTA DE PLATÔ: ${repetitions.length} repetições registradas.
+   AÇÃO: Revisar material e agendar orientação individual.
+`;
+        } else if (repetitions.length > 0) {
+            analysis += `⚠️ ATENÇÃO: ${repetitions.length} repetição(ões) registrada(s).
+   AÇÃO: Monitorar o próximo bloco com atenção.
+`;
+        }
+        const lowGrades = (student.reportHistory || []).filter(e => parseFloat(e.grade) < 7);
+        if (lowGrades.length > 0) {
+            analysis += `📊 PONTO DE ATENÇÃO (BOLETIM):
+   Nota(s) abaixo de 7.0 em: ${lowGrades.map(e => e.subject).join(', ')}.
+   AÇÃO: Agendar reunião com os pais para alinhar estratégias.
+`;
+        }
+        const alerts = (student.performanceLog || []).filter(e => e.type === 'ALERTA');
+        if (alerts.length > 0) {
+            analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
+   - "${alerts[alerts.length - 1].details}" (${new Date(alerts[alerts.length - 1].date + 'T12:00:00Z').toLocaleDateString('pt-BR')})
+   AÇÃO: Verificar se o problema foi resolvido.
+`;
+        }
+        analysis += `💡 SUGESTÃO ESTRATÉGICA:
+`;
+        if (repetitions.length >= 3 && lowGrades.length > 0) {
+            analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
+`;
+        } else if (!student.programmingHistory || student.programmingHistory.length === 0) {
+            analysis += `   O aluno não possui programação registrada. Iniciar a programação de materiais é fundamental para acompanhar o progresso.
+`;
+        } else {
+            analysis += `   O progresso parece estável. Manter o acompanhamento e registrar elogios para reforço positivo.
+`;
+        }
+        analysis += `
+Última atualização: ${new Date().toLocaleString('pt-BR')}`;
+        analysisContent.textContent = analysis;
+    },
+    async uploadFileToCloudinary(file, folder) {
+        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
+            throw new Error('Configuração do Cloudinary não encontrada em JTS/config.js');
+        }
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
+        formData.append('folder', `${this.state.userId}/${folder}`);
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, { method: 'POST', body: formData });
+        if (!response.ok) throw new Error('Erro no upload para Cloudinary');
+        const result = await response.json();
+        return result.secure_url;
+    },
+    promptForReset() {
+        const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
+        if (code === '*177') {
+            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!
+Isto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.
+Para confirmar, digite 'APAGAR TUDO' e clique em OK.");
+            if (confirmation === 'APAGAR TUDO') {
+                this.hardResetUserData();
+            } else {
+                alert("Operação de reset cancelada.");
+            }
+        } else if (code !== null) {
+            alert("Código incorreto.");
+        }
+    },
+    async hardResetUserData() {
+        alert("A iniciar o reset completo do sistema. A página será recarregada ao concluir.");
+        try {
+            const collections = ['diario', 'inventario', 'alunos', 'gestores'];
+            for (const collectionName of collections) {
+                const querySnapshot = await this.state.db.collection('gestores').doc(this.state.userId).collection(collectionName).get();
+                if (querySnapshot.empty) continue;
+                const batch = this.state.db.batch();
+                querySnapshot.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+            }
+            alert("Sistema resetado com sucesso.");
+            location.reload();
+        } catch (error) {
+            console.error("Erro no reset:", error);
+            alert("Ocorreu um erro ao tentar resetar o sistema.");
+        }
+    }
+};
