@@ -111,7 +111,7 @@ const App = {
     },
     
     // =====================================================================
-    // ================== CORREÇÃO: LÓGICA DE GRAVAÇÃO ===================
+    // ================== LÓGICA DE GRAVAÇÃO (JIT) ===================
     // =====================================================================
     
     async startRecording() {
@@ -203,7 +203,7 @@ const App = {
     },
 
     // =====================================================================
-    // ================== CORREÇÃO: ARQUITETURA DE IA REAL =================
+    // ================== ARQUITETURA DE IA (Cloudinary + Gemini) ================
     // =====================================================================
 
     /**
@@ -295,8 +295,13 @@ const App = {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
 
-        // Usando a API v1beta (gemini-1.5-flash)
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
+        // =====================================================================
+        // ================= CORREÇÃO: NOME DO MODELO DA API ===================
+        // =====================================================================
+        // O erro "models/gemini-1.5-flash is not found" é porque o nome
+        // correto na API pública é "gemini-1.5-flash-latest".
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        // =====================================================================
 
         // =====================================================================
         // ================ PROMPT ANTI-ALUCINAÇÃO (REAL) ===================
@@ -340,7 +345,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 }
         `;
 
-        // CORREÇÃO: Corpo da requisição formatado para multimodal (texto + URL de áudio)
+        // Corpo da requisição formatado para multimodal (texto + URL de áudio)
         const requestBody = {
             "contents": [
                 {
@@ -751,6 +756,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 
                 const fileInput = formElement.querySelector('#reportFile');
                 if (fileInput.files.length > 0) {
+                    // Esta é a única vez que usamos Cloudinary fora da IA
                     entry.fileurl = await this.uploadFileToCloudinary(fileInput.files[0], 'boletins');
                 }
             } else if (historyType === 'performanceLog') {
@@ -819,8 +825,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             if (entryDateStr.includes('T')) { // É um ISOString (createdAt)
                 date = new Date(entryDateStr).toLocaleDateString('pt-BR');
             } else if (entryDateStr.includes('-')) { // É um "YYYY-MM-DD" (entry.date)
-                const parts = entryDateStr.split('-');
+                const parts = entryDateStr.split('-'); // [YYYY, MM, DD]
                 // Cria a data como meio-dia (local) para evitar problemas de fuso
+                // (Mês no JS é 0-indexado, por isso parts[1] - 1)
                 const localDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
                 date = localDate.toLocaleDateString('pt-BR');
             }
@@ -835,6 +842,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 detailsHTML = `<div class="history-details"><strong>${entry.subject || ''}:</strong> Nota ${entry.grade || 'N/A'}</div>${entry.fileurl ? `<div class="history-file">📎 <a href="${entry.fileurl}" target="_blank">Ver anexo</a></div>` : ''}`;
                 break;
             case 'performanceLog':
+                // CORREÇÃO: Mostrar o TIPO e os DETALHES
                 detailsHTML = `<div class="history-details"><strong>${entry.type || 'REGISTRO'}:</strong> ${entry.details || ''}</div>`;
                 break;
         }
@@ -842,7 +850,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             <div class="history-item">
                 <div class="history-item-header">
                     <span class="history-date">${date}</span>
-                    </div>
+                </div>
                 ${detailsHTML}
                 <button class="delete-history-btn" onclick="App.deleteHistoryEntry('${type}', '${entry.id}')" title="Excluir">&times;</button>
             </div>`;
@@ -908,8 +916,10 @@ ${'='.repeat(50)}
         if (alerts.length > 0) {
             const lastAlert = alerts[alerts.length - 1];
             const alertDate = lastAlert.date || lastAlert.createdAt;
+            // Corrigido para lidar com data indefinida
+            const displayDate = alertDate ? new Date(alertDate + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'data desconhecida';
             analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
-   - "${lastAlert.details}" (${new Date(alertDate + 'T12:00:00Z').toLocaleDateString('pt-BR')})
+   - "${lastAlert.details}" (${displayDate})
    AÇÃO: Verificar se o problema foi resolvido.
 `;
         }
@@ -929,7 +939,7 @@ ${'='.repeat(50)}
 Última atualização: ${new Date().toLocaleString('pt-BR')}`;
         analysisContent.textContent = analysis;
     },
-    // Esta função é usada para anexos de boletins
+    // Esta função é usada APENAS para anexos de boletins
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js');
@@ -938,6 +948,9 @@ ${'='.repeat(50)}
         formData.append('file', file);
         formData.append('upload_preset', cloudinaryConfig.uploadPreset);
         formData.append('folder', `${this.state.userId}/${folder}`);
+        // Para boletins (imagens/pdf), não usamos 'raw'
+        formData.append('resource_type', 'auto');
+        
         const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, { method: 'POST', body: formData });
         if (!response.ok) throw new Error('Erro no upload para Cloudinary');
         const result = await response.json();
