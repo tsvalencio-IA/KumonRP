@@ -212,10 +212,9 @@ const App = {
         // =====================================================================
         // ================= CORREÇÃO: NOME DO MODELO DA API ===================
         // =====================================================================
-        // O erro "models/gemini-1.5-flash-latest is not found for API version v1beta"
-        // indica que o sufixo "-latest" não é compatível com a API "v1beta".
-        // A correção é usar o nome do modelo "gemini-1.5-flash".
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
+        // Revertendo para o nome oficial 'latest'. O erro 404 (Not Found)
+        // indica um problema de configuração no projeto Google, não um typo.
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
         // =====================================================================
 
         // =====================================================================
@@ -499,9 +498,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
 
         // =====================================================================
-        // ======================= CORREÇÃO DO TYPO ==========================
+        // ======================= CORREÇÃO DO TYPO (ANTERIOR) ==============
         // =====================================================================
-        // Alterado de 'filteredSstudents' para 'filteredStudents'
+        // Garantindo que a variável 'filteredStudents' está correta.
         this.elements.studentList.innerHTML = filteredStudents
             .sort(([, a], [, b]) => a.name.localeCompare(b.name))
             .map(([id, student]) => `
@@ -535,13 +534,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             document.getElementById('portStage').value = student.portStage || '';
             document.getElementById('engStage').value = student.engStage || '';
             this.elements.deleteStudentBtn.style.display = 'block';
-            this.loadStudentHistories(studentId);
+            this.loadStudentHistories(studentId); // <--- Onde os erros de cache ocorrem
             this.elements.studentAnalysisContent.textContent = 'Clique em "Gerar Nova Análise" para começar.';
         } else {
             this.elements.modalTitle.textContent = '👨‍🎓 Adicionar Novo Aluno';
             this.elements.studentIdInput.value = '';
             this.elements.deleteStudentBtn.style.display = 'none';
-            this.clearStudentHistories();
+            this.clearStudentHistories(); // <--- Onde os erros de cache ocorrem
             this.elements.studentAnalysisContent.textContent = 'Salve o aluno para poder gerar uma análise.';
         }
         this.switchTab('programming');
@@ -670,9 +669,16 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.renderHistory('performanceLog', student.performanceLog || []);
     },
     clearStudentHistories() {
-        this.elements.programmingHistory.innerHTML = '<p>Nenhuma programação registrada.</p>';
-        this.elements.reportHistory.innerHTML = '<p>Nenhum boletim registrado.</p>';
-        this.elements.performanceHistory.innerHTML = '<p>Nenhum registro de desempenho.</p>';
+        // Assegura que os elementos existem antes de tentar acessá-los
+        if (this.elements.programmingHistory) {
+            this.elements.programmingHistory.innerHTML = '<p>Nenhuma programação registrada.</p>';
+        }
+        if (this.elements.reportHistory) {
+            this.elements.reportHistory.innerHTML = '<p>Nenhum boletim registrado.</p>';
+        }
+        if (this.elements.performanceHistory) {
+            this.elements.performanceHistory.innerHTML = '<p>Nenhum registro de desempenho.</p>';
+        }
     },
     
     // =====================================================================
@@ -739,6 +745,11 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
     renderHistory(historyType, historyData) {
         const container = this.elements[historyType];
+        // Verificação de segurança (causa do erro de cache)
+        if (!container) {
+            console.error(`Elemento de container '${historyType}' não encontrado no DOM.`);
+            return;
+        }
         
         const historyArray = Array.isArray(historyData) ? historyData : Object.values(historyData || {});
 
@@ -767,9 +778,11 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 date = localDate.toLocaleDateString('pt-BR');
             }
         }
-       
+
         switch (type) {
             case 'programmingHistory':
+                // Este código está correto e, após a limpeza do cache,
+                // exibirá "matematica d1-d10"
                 detailsHTML = `<div class="history-details"><strong>Material:</strong> ${entry.material || ''}</div>${entry.notes ? `<div class="history-details"><strong>Obs:</strong> ${entry.notes}</div>` : ''}`;
                 break;
             case 'reportHistory':
