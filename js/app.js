@@ -1,8 +1,9 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
+// REFATORADO PARA USAR O REALTIME DATABASE
 const App = {
     state: {
         userId: null,
-        db: null,
+        db: null, // Agora será uma instância do Realtime Database
         students: {},
         currentStudentId: null,
         mediaRecorder: null,
@@ -15,14 +16,8 @@ const App = {
     // =====================================================================
     // ======================== INICIALIZAÇÃO E SETUP ======================
     // =====================================================================
-    init(user, firestoreInstance) {
-        // CORREÇÃO: A tela de login não estava sendo escondida corretamente.
-        // Adicionando verificação de 'loading-overlay' se existir.
-        const loadingOverlay = document.getElementById('loading-overlay');
-        if (loadingOverlay) {
-            loadingOverlay.style.display = 'none';
-        }
-        
+    init(user, databaseInstance) {
+        // CORREÇÃO: A imagem de erro mostra que 'loading-overlay' não existe.
         const loginScreen = document.getElementById('login-screen');
         if (loginScreen) {
             loginScreen.classList.add('hidden');
@@ -30,7 +25,7 @@ const App = {
 
         document.getElementById('app-container').classList.remove('hidden');
         this.state.userId = user.uid;
-        this.state.db = firestoreInstance;
+        this.state.db = databaseInstance; // Recebendo firebase.database()
         document.getElementById('userEmail').textContent = user.email;
         this.mapDOMElements();
         this.addEventListeners();
@@ -357,42 +352,74 @@ Gere um JSON com os seguintes campos exatos:
     },
     // =====================================================================
     // ======================== LÓGICA DE DADOS (CORE) =====================
+    // ===================== REFATORADO PARA REALTIME DB ===================
     // =====================================================================
-    getDocRef(collection, docId) {
+    
+    /**
+     * Retorna uma referência do Realtime Database para um caminho específico.
+     * O caminho é 'gestores/{userId}/{collectionName}/{docId}'
+     */
+    getDocRef(collectionName, docId) {
         if (!this.state.userId) return null;
-        return this.state.db.collection('gestores').doc(this.state.userId).collection(collection).doc(docId);
+        // A estrutura de dados antiga (Firestore) era:
+        // gestores/{userId}/alunos/lista_alunos
+        // gestores/{userId}/gestores/brain
+        // Vamos replicar isso no Realtime Database:
+        return this.state.db.ref(`gestores/${this.state.userId}/${collectionName}/${docId}`);
     },
-    async fetchData(collection, docId) {
-        const docRef = this.getDocRef(collection, docId);
+
+    /**
+     * Busca dados de um caminho no Realtime Database.
+     */
+    async fetchData(collectionName, docId) {
+        const docRef = this.getDocRef(collectionName, docId);
         if (!docRef) return null;
-        const doc = await docRef.get();
-        return doc.exists ? doc.data() : null;
+        const snapshot = await docRef.get();
+        return snapshot.exists() ? snapshot.val() : null;
     },
-    async saveData(collection, docId, data) {
-        const docRef = this.getDocRef(collection, docId);
-        if (docRef) await docRef.set(data, { merge: true });
+
+    /**
+     * Salva dados em um caminho no Realtime Database.
+     * ATENÇÃO: Realtime DB não tem 'merge'. A IA anterior usava { merge: true }.
+     * A função 'update' é o equivalente mais próximo de 'merge'.
+     * A função 'set' sobrescreve tudo no nó.
+     * Vamos usar 'update' para preservar dados não listados.
+     */
+    async saveData(collectionName, docId, data) {
+        const docRef = this.getDocRef(collectionName, docId);
+        if (docRef) await docRef.update(data); // Usando 'update' em vez de 'set' para simular { merge: true }
     },
+
+    /**
+     * Salva dados usando 'set' (sobrescreve completo).
+     */
+    async setData(collectionName, docId, data) {
+        const docRef = this.getDocRef(collectionName, docId);
+        if (docRef) await docRef.set(data);
+    },
+
     // =====================================================================
     // ======================== NOVO: GESTÃO DO BRAIN.JSON =================
+    // ===================== REFATORADO PARA REALTIME DB ===================
     // =====================================================================
+    
     async fetchBrainData() {
-        // Busca o documento 'brain' na coleção 'gestores/{userId}/gestores'
-        // Este é o local onde o 'brain.json' é mantido
-        const brainDocRef = this.state.db.collection('gestores').doc(this.state.userId).collection('gestores').doc('brain');
-        const doc = await brainDocRef.get();
-        if (doc.exists) {
-            return doc.data().brain || {};
+        // O caminho agora é 'gestores/{userId}/gestores/brain'
+        const brainData = await this.fetchData('gestores', 'brain');
+        if (brainData && brainData.brain) {
+            return brainData.brain;
         } else {
-            // Se não existir, retorna um objeto vazio
-            console.warn("Documento 'brain' não encontrado no Firebase. O modelo não terá contexto.");
+            console.warn("Nó 'brain' não encontrado no Realtime Database. O modelo não terá contexto.");
             return {};
         }
     },
+    
     async saveBrainData(brainData) {
-        // Salva o objeto 'brainData' no documento 'brain' na coleção 'gestores/{userId}/gestores'
-        const brainDocRef = this.state.db.collection('gestores').doc(this.state.userId).collection('gestores').doc('brain');
-        await brainDocRef.set({ brain: brainData }, { merge: true });
+        // Salva o objeto 'brainData' no nó 'brain'
+        // A estrutura será: gestores/{userId}/gestores/brain: { brain: {...} }
+        await this.setData('gestores', 'brain', { brain: brainData });
     },
+    
     async handleBrainFileUpload() {
         const fileInput = this.elements.brainFileUpload;
         if (!fileInput.files || fileInput.files.length === 0) {
@@ -419,7 +446,6 @@ Gere um JSON com os seguintes campos exatos:
             let currentBrainData = await this.fetchBrainData();
 
             // Mescla os dados do arquivo enviado com os dados atuais
-            // Isso preserva os dados antigos e adiciona/sobrescreve com os novos
             const mergedBrainData = this.deepMerge(currentBrainData, newBrainData);
 
             // Salva o brain.json mesclado de volta no Firebase
@@ -458,21 +484,17 @@ Gere um JSON com os seguintes campos exatos:
     },
     // =====================================================================
     // ======================= MÓDULO DE ALUNOS (REVISADO) =================
+    // ===================== REFATORADO PARA REALTIME DB ===================
     // =====================================================================
     async loadStudents() {
         try {
-            const doc = await this.getDocRef('alunos', 'lista_alunos').get();
-            this.state.students = doc.exists ? doc.data().students || {} : {};
+            // Busca o nó 'lista_alunos' em 'gestores/{userId}/alunos/lista_alunos'
+            const data = await this.fetchData('alunos', 'lista_alunos');
+            this.state.students = (data && data.students) ? data.students : {};
             this.renderStudentList();
             
-            // =================================================================
-            // ======================== CORREÇÃO DE BUG ========================
-            // =================================================================
-            // A LINHA ABAIXO FOI REMOVIDA na correção anterior.
-            // Ela causava um bug que apagava todos os alunos do 'brain.json'
-            // sempre que a página era carregada.
-            // await this.updateBrainFromStudents();
-            // =================================================================
+            // Bug de apagar dados do 'brain' ao carregar foi corrigido
+            // na minha primeira análise e permanece corrigido aqui.
 
         } catch (error) {
             console.error('Erro ao carregar alunos:', error);
@@ -481,10 +503,13 @@ Gere um JSON com os seguintes campos exatos:
     },
     renderStudentList() {
         const searchTerm = this.elements.studentSearch.value.toLowerCase();
+        
+        // O state.students do Realtime DB pode vir como um objeto
         const filteredStudents = Object.entries(this.state.students).filter(([id, student]) =>
-            student.name.toLowerCase().includes(searchTerm) ||
-            student.responsible.toLowerCase().includes(searchTerm)
+            (student.name && student.name.toLowerCase().includes(searchTerm)) ||
+            (student.responsible && student.responsible.toLowerCase().includes(searchTerm))
         );
+
         if (filteredStudents.length === 0) {
             this.elements.studentList.innerHTML = `<div class="empty-state"><p>📚 ${searchTerm ? 'Nenhum aluno encontrado.' : 'Nenhum aluno cadastrado.'}</p><p>Clique em "Adicionar Novo Aluno" para começar!</p></div>`;
             return;
@@ -548,7 +573,11 @@ Gere um JSON com os seguintes campos exatos:
             this.elements.studentForm.reportValidity();
             return;
         }
+        
+        // No Realtime DB, é melhor usar push() para gerar IDs únicos se for novo,
+        // mas o ID 'Date.now()' funciona para esta estrutura.
         const studentId = this.elements.studentIdInput.value || Date.now().toString();
+        
         const studentData = {
             name: document.getElementById('studentName').value.trim(),
             responsible: document.getElementById('studentResponsible').value.trim(),
@@ -556,15 +585,21 @@ Gere um JSON com os seguintes campos exatos:
             mathStage: document.getElementById('mathStage').value.trim(),
             portStage: document.getElementById('portStage').value.trim(),
             engStage: document.getElementById('engStage').value.trim(),
+            // Garante que os históricos sejam arrays (JSON não armazena arrays vazios)
             programmingHistory: this.state.students[studentId]?.programmingHistory || [],
             reportHistory: this.state.students[studentId]?.reportHistory || [],
             performanceLog: this.state.students[studentId]?.performanceLog || [],
             createdAt: this.state.students[studentId]?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
+        
+        // Atualiza o estado local
         this.state.students[studentId] = studentData;
+        
         try {
-            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva o objeto 'students' inteiro de volta no nó 'lista_alunos'
+            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            
             this.renderStudentList();
             if (!this.state.currentStudentId) {
                 this.state.currentStudentId = studentId;
@@ -584,11 +619,17 @@ Gere um JSON com os seguintes campos exatos:
         if (!this.state.currentStudentId) return;
         const studentName = this.state.students[this.state.currentStudentId].name;
         if (!confirm(`Tem certeza que deseja excluir o aluno "${studentName}"? Esta ação é irreversível.`)) return;
+        
+        // Remove do estado local
         delete this.state.students[this.state.currentStudentId];
+        
         try {
-            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva (sobrescreve) o objeto 'students' inteiro sem o aluno excluído
+            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+
             this.renderStudentList();
             this.closeStudentModal();
+            
             // ATUALIZAÇÃO: Sincroniza o brain.json após excluir o aluno
             await this.updateBrainFromStudents();
             alert('Aluno excluído com sucesso!');
@@ -597,20 +638,26 @@ Gere um JSON com os seguintes campos exatos:
             alert('Erro ao excluir aluno. Tente novamente.');
         }
     },
-    // NOVA FUNÇÃO: Atualiza o brain.json com base na lista de alunos atual
+    // ATUALIZAÇÃO DO BRAIN (Refatorado para Realtime DB)
     async updateBrainFromStudents() {
-        // Busca o brain.json atual
         let currentBrainData = await this.fetchBrainData();
-
-        // Cria uma cópia do brain para modificação
         let updatedBrain = { ...currentBrainData };
 
-        // Atualiza ou adiciona os alunos do state.students no brain
         if (!updatedBrain.alunos) {
             updatedBrain.alunos = {};
         }
+        
+        // Limpa alunos antigos que não existem mais no state.students
+        // (necessário se o brain for mesclado de outra fonte)
+        const currentStudentIds = Object.keys(this.state.students);
+        for (const brainId in updatedBrain.alunos) {
+            if (!currentStudentIds.includes(brainId)) {
+                delete updatedBrain.alunos[brainId];
+            }
+        }
+
+        // Atualiza ou adiciona os alunos do state.students no brain
         for (const [id, student] of Object.entries(this.state.students)) {
-            // Mapeia os campos do aluno para o formato do brain.json
             updatedBrain.alunos[id] = {
                 id: id,
                 nome: student.name,
@@ -619,19 +666,21 @@ Gere um JSON com os seguintes campos exatos:
                 estagio_matematica: student.mathStage,
                 estagio_portugues: student.portStage,
                 estagio_ingles: student.engStage,
-                historico: student.performanceLog, // Exemplo: pode ser mais específico
-                metas: {}, // Pode ser adicionado ao formulário
-                observacoes: [] // Pode ser adicionado ao formulário ou histórico
+                // Garante que o histórico seja um array
+                historico: student.performanceLog || [],
+                metas: updatedBrain.alunos[id]?.metas || {}, // Preserva metas existentes
+                observacoes: updatedBrain.alunos[id]?.observacoes || [] // Preserva observações
             };
         }
 
         // Salva o brain.json atualizado no Firebase
         await this.saveBrainData(updatedBrain);
-        console.log("brain.json atualizado com base nos alunos da plataforma.");
+        console.log("brain.json atualizado com base nos alunos da plataforma (Realtime DB).");
     },
     loadStudentHistories(studentId) {
         const student = this.state.students[studentId];
         if (!student) return this.clearStudentHistories();
+        // O Realtime DB pode retornar 'undefined' para arrays vazios
         this.renderHistory('programmingHistory', student.programmingHistory || []);
         this.renderHistory('reportHistory', student.reportHistory || []);
         this.renderHistory('performanceLog', student.performanceLog || []);
@@ -666,12 +715,21 @@ Gere um JSON com os seguintes campos exatos:
                 catch (error) { console.error('Erro no upload:', error); alert('Erro no upload do arquivo.'); }
             }
         }
+        
+        // Garante que o array de histórico exista no estado local
+        if (!this.state.students[this.state.currentStudentId][historyType]) {
+            this.state.students[this.state.currentStudentId][historyType] = [];
+        }
+        
         this.state.students[this.state.currentStudentId][historyType].push(entry);
+        
         try {
-            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva o objeto 'students' inteiro
+            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
             formElement.reset();
-            // ATUALIZAÇÃO: Sincroniza o brain.json após adicionar histórico (opcional, mas pode ser útil)
+            // ATUALIZAÇÃO: Sincroniza o brain.json
             await this.updateBrainFromStudents();
         } catch (error) {
             console.error('Erro ao salvar histórico:', error);
@@ -681,18 +739,26 @@ Gere um JSON com os seguintes campos exatos:
     },
     renderHistory(historyType, historyData) {
         const container = this.elements[historyType];
-        if (!historyData || historyData.length === 0) {
+        
+        // Realtime DB pode retornar um objeto em vez de um array se as chaves forem numéricas
+        // Garantimos que estamos lidando com um array
+        const historyArray = Array.isArray(historyData) ? historyData : Object.values(historyData);
+
+        if (!historyArray || historyArray.length === 0) {
             container.innerHTML = `<p>Nenhum registro encontrado.</p>`;
             return;
         }
-        container.innerHTML = historyData
-            .sort((a, b) => new Date(b.date) - new Date(a.date))
+        container.innerHTML = historyArray
+            .sort((a, b) => new Date(b.date) - new Date(a.date)) // 'date' pode não existir, 'createdAt' seria melhor
             .map(entry => this.createHistoryItemHTML(historyType, entry))
             .join('');
     },
     createHistoryItemHTML(type, entry) {
         let detailsHTML = '';
-        const date = entry.date ? new Date(entry.date + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'Data Inválida';
+        // Usa 'createdAt' como fallback se 'date' não estiver preenchido
+        const entryDate = entry.date || entry.createdAt;
+        const date = entryDate ? new Date(entryDate.startsWith('20') ? entryDate : new Date(entryDate + 'T12:00:00Z')).toLocaleDateString('pt-BR') : 'Data Inválida';
+        
         switch (type) {
             case 'programmingHistory':
                 detailsHTML = `<div class="history-details"><strong>Material:</strong> ${entry.material || ''}</div>${entry.notes ? `<div class="history-details"><strong>Obs:</strong> ${entry.notes}</div>` : ''}`;
@@ -716,12 +782,20 @@ Gere um JSON com os seguintes campos exatos:
     },
     async deleteHistoryEntry(historyType, entryId) {
         if (!confirm('Tem certeza que deseja excluir este registro do histórico?')) return;
+        
         const student = this.state.students[this.state.currentStudentId];
-        student[historyType] = student[historyType].filter(entry => entry.id !== entryId);
+        
+        // Garante que é um array e filtra
+        let historyArray = Array.isArray(student[historyType]) ? student[historyType] : Object.values(student[historyType]);
+        student[historyType] = historyArray.filter(entry => entry.id !== entryId);
+        
         try {
-            await this.saveData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva o objeto 'students' inteiro
+            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            
             this.renderHistory(historyType, student[historyType]);
-            // ATUALIZAÇÃO: Sincroniza o brain.json após excluir histórico (opcional)
+            
+            // ATUALIZAÇÃO: Sincroniza o brain.json
             await this.updateBrainFromStudents();
         } catch (error) {
             alert('Falha ao excluir o registro.');
@@ -738,10 +812,14 @@ Gere um JSON com os seguintes campos exatos:
             analysisContent.textContent = 'Erro: Dados do aluno não encontrados.';
             return;
         }
+        
+        const performanceLog = Array.isArray(student.performanceLog) ? student.performanceLog : Object.values(student.performanceLog || {});
+        const reportHistory = Array.isArray(student.reportHistory) ? student.reportHistory : Object.values(student.reportHistory || {});
+        
         let analysis = `ANÁLISE INTELIGENTE - ${student.name}
 ${'='.repeat(50)}
 `;
-        const repetitions = (student.performanceLog || []).filter(e => e.type === 'REPETICAO');
+        const repetitions = performanceLog.filter(e => e.type === 'REPETICAO');
         if (repetitions.length >= 3) {
             analysis += `🚨 ALERTA DE PLATÔ: ${repetitions.length} repetições registradas.
    AÇÃO: Revisar material e agendar orientação individual.
@@ -751,17 +829,19 @@ ${'='.repeat(50)}
    AÇÃO: Monitorar o próximo bloco com atenção.
 `;
         }
-        const lowGrades = (student.reportHistory || []).filter(e => parseFloat(e.grade) < 7);
+        const lowGrades = reportHistory.filter(e => parseFloat(e.grade) < 7);
         if (lowGrades.length > 0) {
             analysis += `📊 PONTO DE ATENÇÃO (BOLETIM):
    Nota(s) abaixo de 7.0 em: ${lowGrades.map(e => e.subject).join(', ')}.
    AÇÃO: Agendar reunião com os pais para alinhar estratégias.
 `;
         }
-        const alerts = (student.performanceLog || []).filter(e => e.type === 'ALERTA');
+        const alerts = performanceLog.filter(e => e.type === 'ALERTA');
         if (alerts.length > 0) {
+            const lastAlert = alerts[alerts.length - 1];
+            const alertDate = lastAlert.date || lastAlert.createdAt;
             analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
-   - "${alerts[alerts.length - 1].details}" (${new Date(alerts[alerts.length - 1].date + 'T12:00:00Z').toLocaleDateString('pt-BR')})
+   - "${lastAlert.details}" (${new Date(alertDate + 'T12:00:00Z').toLocaleDateString('pt-BR')})
    AÇÃO: Verificar se o problema foi resolvido.
 `;
         }
@@ -810,14 +890,10 @@ ${'='.repeat(50)}
     async hardResetUserData() {
         alert("A iniciar o reset completo do sistema. A página será recarregada ao concluir.");
         try {
-            const collections = ['diario', 'inventario', 'alunos', 'gestores']; // Adiciona 'gestores' para apagar o brain também
-            for (const collectionName of collections) {
-                const querySnapshot = await this.state.db.collection('gestores').doc(this.state.userId).collection(collectionName).get();
-                if (querySnapshot.empty) continue;
-                const batch = this.state.db.batch();
-                querySnapshot.forEach(doc => batch.delete(doc.ref));
-                await batch.commit();
-            }
+            // Caminho para apagar todos os dados do usuário no Realtime DB
+            const userRootRef = this.state.db.ref(`gestores/${this.state.userId}`);
+            await userRootRef.remove();
+            
             alert("Sistema resetado com sucesso.");
             location.reload();
         } catch (error) {
