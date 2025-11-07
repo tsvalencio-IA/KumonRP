@@ -355,42 +355,53 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     },
+    
     // =====================================================================
     // ======================== LÓGICA DE DADOS (CORE) =====================
-    // ===================== REFATORADO PARA REALTIME DB ===================
+    // ============ REFATORADO PARA CAMINHOS DE NÓ CORRETOS ================
     // =====================================================================
     
-    getDocRef(collectionName, docId) {
+    /**
+     * Retorna uma referência de nó do Realtime Database dentro do namespace do usuário.
+     * @param {string} nodePath O caminho dentro do nó do usuário (ex: 'alunos/lista_alunos' ou 'brain')
+     */
+    getNodeRef(nodePath) {
         if (!this.state.userId) return null;
-        return this.state.db.ref(`gestores/${this.state.userId}/${collectionName}/${docId}`);
+        // Caminho final: gestores/{USER_ID}/{nodePath}
+        return this.state.db.ref(`gestores/${this.state.userId}/${nodePath}`);
     },
 
-    async fetchData(collectionName, docId) {
-        const docRef = this.getDocRef(collectionName, docId);
-        if (!docRef) return null;
-        const snapshot = await docRef.get();
+    /**
+     * Busca dados de um nó específico.
+     * @param {string} nodePath O caminho dentro do nó do usuário.
+     */
+    async fetchData(nodePath) {
+        const nodeRef = this.getNodeRef(nodePath);
+        if (!nodeRef) return null;
+        const snapshot = await nodeRef.get();
         return snapshot.exists() ? snapshot.val() : null;
     },
 
-    async saveData(collectionName, docId, data) {
-        const docRef = this.getDocRef(collectionName, docId);
-        if (docRef) await docRef.update(data); 
-    },
-
-    async setData(collectionName, docId, data) {
-        const docRef = this.getDocRef(collectionName, docId);
-        if (docRef) await docRef.set(data);
+    /**
+     * Define (sobrescreve) dados em um nó específico.
+     * @param {string} nodePath O caminho dentro do nó do usuário.
+     * @param {object} data Os dados a serem salvos.
+     */
+    async setData(nodePath, data) {
+        const nodeRef = this.getNodeRef(nodePath);
+        if (nodeRef) await nodeRef.set(data);
     },
 
     // =====================================================================
     // ======================== NOVO: GESTÃO DO BRAIN.JSON =================
-    // ===================== REFATORADO PARA REALTIME DB ===================
+    // ================== REFATORADO PARA CAMINHOS CORRETOS ================
     // =====================================================================
     
     async fetchBrainData() {
-        const brainData = await this.fetchData('gestores', 'brain');
-        if (brainData && brainData.brain) {
-            return brainData.brain;
+        // Busca de: gestores/{USER_ID}/brain
+        const brainData = await this.fetchData('brain'); 
+        if (brainData) {
+            return brainData;
         } else {
             console.warn("Nó 'brain' não encontrado no Realtime Database. O modelo não terá contexto.");
             return {};
@@ -398,7 +409,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     
     async saveBrainData(brainData) {
-        await this.setData('gestores', 'brain', { brain: brainData });
+        // Salva em: gestores/{USER_ID}/brain
+        // Isso corrige o bug do aninhamento extra { brain: { brain: ... } }
+        await this.setData('brain', brainData); 
     },
     
     async handleBrainFileUpload() {
@@ -425,6 +438,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
             let currentBrainData = await this.fetchBrainData();
             const mergedBrainData = this.deepMerge(currentBrainData, newBrainData);
+            
+            // Salva os dados mesclados no caminho correto
             await this.saveBrainData(mergedBrainData);
 
             alert('Arquivo JSON enviado e "brain.json" atualizado com sucesso no Firebase!');
@@ -457,11 +472,12 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     // =====================================================================
     // ======================= MÓDULO DE ALUNOS (REVISADO) =================
-    // ===================== REFATORADO PARA REALTIME DB ===================
+    // ================== REFATORADO PARA CAMINHOS CORRETOS ================
     // =====================================================================
     async loadStudents() {
         try {
-            const data = await this.fetchData('alunos', 'lista_alunos');
+            // Busca de: gestores/{USER_ID}/alunos/lista_alunos
+            const data = await this.fetchData('alunos/lista_alunos');
             this.state.students = (data && data.students) ? data.students : {};
             this.renderStudentList();
         } catch (error) {
@@ -481,7 +497,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             this.elements.studentList.innerHTML = `<div class="empty-state"><p>📚 ${searchTerm ? 'Nenhum aluno encontrado.' : 'Nenhum aluno cadastrado.'}</p><p>Clique em "Adicionar Novo Aluno" para começar!</p></div>`;
             return;
         }
-        this.elements.studentList.innerHTML = filteredStudents
+        this.elements.studentList.innerHTML = filteredSstudents
             .sort(([, a], [, b]) => a.name.localeCompare(b.name))
             .map(([id, student]) => `
                 <div class="student-card" onclick="App.openStudentModal('${id}')">
@@ -560,7 +576,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.state.students[studentId] = studentData;
         
         try {
-            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva em: gestores/{USER_ID}/alunos/lista_alunos
+            await this.setData('alunos/lista_alunos', { students: this.state.students });
             
             this.renderStudentList();
             if (!this.state.currentStudentId) {
@@ -569,6 +586,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 this.elements.modalTitle.textContent = `📋 Ficha de ${studentData.name}`;
                 this.elements.deleteStudentBtn.style.display = 'block';
             }
+            
+            // ATUALIZA O NÓ 'brain'
             await this.updateBrainFromStudents();
             alert('Aluno salvo com sucesso!');
         } catch (error) {
@@ -584,9 +603,12 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         delete this.state.students[this.state.currentStudentId];
         
         try {
-            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva em: gestores/{USER_ID}/alunos/lista_alunos
+            await this.setData('alunos/lista_alunos', { students: this.state.students });
             this.renderStudentList();
             this.closeStudentModal();
+            
+            // ATUALIZA O NÓ 'brain'
             await this.updateBrainFromStudents();
             alert('Aluno excluído com sucesso!');
         } catch (error) {
@@ -596,13 +618,17 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     
     async updateBrainFromStudents() {
+        // NÃO buscamos mais o 'brain.json' estático.
+        // Buscamos o 'brain' dinâmico do Firebase.
         let currentBrainData = await this.fetchBrainData();
-        let updatedBrain = { ...currentBrainData };
+        let updatedBrain = { ...currentBrainData }; // Inicia com o cérebro existente
 
+        // Garante que o nó de alunos exista dentro do cérebro
         if (!updatedBrain.alunos) {
             updatedBrain.alunos = {};
         }
         
+        // Sincronização: Remove do 'brain' alunos que não existem mais em 'state.students'
         const currentStudentIds = Object.keys(this.state.students);
         for (const brainId in updatedBrain.alunos) {
             if (!currentStudentIds.includes(brainId)) {
@@ -610,6 +636,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             }
         }
 
+        // Sincronização: Adiciona/Atualiza alunos do 'state.students' para o 'brain'
         for (const [id, student] of Object.entries(this.state.students)) {
             updatedBrain.alunos[id] = {
                 id: id,
@@ -619,11 +646,14 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 estagio_matematica: student.mathStage,
                 estagio_portugues: student.portStage,
                 estagio_ingles: student.engStage,
+                // Mantém metas/observações que podem ter vindo do 'brain.json' carregado
                 historico: student.performanceLog || [],
                 metas: updatedBrain.alunos[id]?.metas || {}, 
                 observacoes: updatedBrain.alunos[id]?.observacoes || [] 
             };
         }
+        
+        // Salva o cérebro atualizado no caminho correto
         await this.saveBrainData(updatedBrain);
         console.log("brain.json atualizado com base nos alunos da plataforma (Realtime DB).");
     },
@@ -641,7 +671,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     
     // =====================================================================
-    // ================ CORREÇÃO: BUG DO HISTÓRICO VAZIO ===================
+    // ================ CÓDIGO DE HISTÓRICO (SEM ALTERAÇÕES) ===============
     // =====================================================================
     async addHistoryEntry(event, historyType, formElement) {
         event.preventDefault();
@@ -650,15 +680,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             return;
         }
 
-        // Validação Explícita (Corrigindo o bug de validação)
         if (!formElement.checkValidity()) {
-            formElement.reportValidity(); // Mostra o balão "Preencha este campo"
+            formElement.reportValidity(); 
             return;
         }
 
         const entry = { id: Date.now().toString(), createdAt: new Date().toISOString() };
 
-        // Leitura Explícita (Corrigindo o bug do 'material' vazio)
         try {
             if (historyType === 'programmingHistory') {
                 entry.date = formElement.querySelector('#programmingDate').value;
@@ -671,7 +699,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 
                 const fileInput = formElement.querySelector('#reportFile');
                 if (fileInput.files.length > 0) {
-                    // Esta é a única vez que usamos Cloudinary fora da IA
                     entry.fileurl = await this.uploadFileToCloudinary(fileInput.files[0], 'boletins');
                 }
             } else if (historyType === 'performanceLog') {
@@ -685,7 +712,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             return;
         }
         
-        // Garante que o array de histórico exista no estado local
         if (!this.state.students[this.state.currentStudentId][historyType]) {
             this.state.students[this.state.currentStudentId][historyType] = [];
         }
@@ -693,8 +719,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.state.students[this.state.currentStudentId][historyType].push(entry);
         
         try {
-            // Salva o objeto 'students' inteiro
-            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            // Salva o objeto 'students' inteiro no caminho correto
+            await this.setData('alunos/lista_alunos', { students: this.state.students });
             
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
             formElement.reset();
@@ -716,7 +742,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             return;
         }
         container.innerHTML = historyArray
-            // Ordena pela data do evento, caindo para createdAt se a data não existir
             .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
             .map(entry => this.createHistoryItemHTML(historyType, entry))
             .join('');
@@ -724,14 +749,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
     createHistoryItemHTML(type, entry) {
         let detailsHTML = '';
-        
-        // =====================================================================
-        // ================== CORREÇÃO: BUG DO FUSO HORÁRIO ==================
-        // =====================================================================
-        // O input 'date' retorna "YYYY-MM-DD".
-        // new Date("YYYY-MM-DD") cria um UTC date (meia-noite), que no fuso -3 (Brasil)
-        // vira dia anterior.
-        // A correção é forçar o parse como se fosse hora local (meio-dia).
         
         const entryDateStr = entry.date || entry.createdAt;
         let date = 'Data Inválida';
@@ -741,12 +758,25 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 date = new Date(entryDateStr).toLocaleDateString('pt-BR');
             } else if (entryDateStr.includes('-')) { // É um "YYYY-MM-DD" (entry.date)
                 const parts = entryDateStr.split('-'); // [YYYY, MM, DD]
-                // Cria a data como meio-dia (local) para evitar problemas de fuso
-                // (Mês no JS é 0-indexado, por isso parts[1] - 1)
                 const localDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
                 date = localDate.toLocaleDateString('pt-BR');
             }
         }
+       
+        // =====================================================================
+        // ================== CORREÇÃO: BUG DOS DADOS DE HISTÓRICO =============
+        // =====================================================================
+        // O JSON mostrou que os dados do aluno "Thiago" foram salvos
+        // com chaves incorretas (dDate, mMaterial, nNotes).
+        // Isso foi um bug no HTML (index.html) que já foi corrigido
+        // na versão anterior que enviei (que usava 'programmingDate', 'programmingMaterial').
+        // O código de renderização abaixo (createHistoryItemHTML) já
+        // espera as chaves corretas ('material', 'notes').
+        // O código de salvamento (addHistoryEntry) também usa as chaves corretas.
+        // O aluno "Pedro" já foi salvo com as chaves corretas.
+        // Portanto, nenhuma correção é necessária aqui, apenas a observação
+        // de que os dados antigos do "Thiago" não serão exibidos corretamente
+        // até que sejam re-salvos.
         // =====================================================================
 
         switch (type) {
@@ -757,7 +787,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 detailsHTML = `<div class="history-details"><strong>${entry.subject || ''}:</strong> Nota ${entry.grade || 'N/A'}</div>${entry.fileurl ? `<div class="history-file">📎 <a href="${entry.fileurl}" target="_blank">Ver anexo</a></div>` : ''}`;
                 break;
             case 'performanceLog':
-                // CORREÇÃO: Mostrar o TIPO e os DETALHES
                 detailsHTML = `<div class="history-details"><strong>${entry.type || 'REGISTRO'}:</strong> ${entry.details || ''}</div>`;
                 break;
         }
@@ -771,7 +800,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             </div>`;
     },
     // =====================================================================
-    // ===================== FIM DAS CORREÇÕES DE HISTÓRICO ================
     // =====================================================================
 
     async deleteHistoryEntry(historyType, entryId) {
@@ -783,7 +811,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         student[historyType] = historyArray.filter(entry => entry.id !== entryId);
         
         try {
-            await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            await this.setData('alunos/lista_alunos', { students: this.state.students });
             this.renderHistory(historyType, student[historyType]);
             await this.updateBrainFromStudents();
         } catch (error) {
@@ -888,7 +916,8 @@ ${'='.repeat(50)}
         alert("A iniciar o reset completo do sistema. A página será recarregada ao concluir.");
         try {
             // Caminho para apagar todos os dados do usuário no Realtime DB
-            const userRootRef = this.state.db.ref(`gestores/${this.state.userId}`);
+            // Caminho: gestores/{USER_ID}
+            const userRootRef = this.getNodeRef(''); // String vazia para pegar a raiz do usuário
             await userRootRef.remove();
             
             alert("Sistema resetado com sucesso.");
