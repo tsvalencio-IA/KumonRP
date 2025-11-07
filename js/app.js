@@ -229,7 +229,8 @@ const App = {
             // Obter brain.json do Firebase (Contexto)
             const brainData = await this.fetchBrainData();
             if (!brainData) {
-                throw new Error('Dados do "brain.json" não encontrados no Firebase. O modelo não pode operar sem o contexto dos alunos.');
+                // Não é um erro fatal, mas a IA terá menos contexto
+                console.warn('Dados do "brain.json" não encontrados. A IA processará o áudio sem contexto de alunos.');
             }
 
             // Converter o áudio para Base64 para envio direto ao Gemini
@@ -238,7 +239,7 @@ const App = {
 
             // Chamar o Gemini com o áudio real e o contexto
             this.elements.reportContent.textContent = 'Enviando áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
-            const analysis = await this.callGeminiForAnalysis(audioBase64, mimeType, brainData);
+            const analysis = await this.callGeminiForAnalysis(audioBase64, mimeType, brainData || {}); // Passa objeto vazio se brainData for nulo
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -263,22 +264,26 @@ const App = {
         // Usando a API v1beta, que suporta dados multimodais (áudio).
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
 
-        // O prompt de texto é enviado junto com o áudio
+        // =====================================================================
+        // ================ CORREÇÃO: PROMPT ANTI-ALUCINAÇÃO ===================
+        // =====================================================================
+        // Este prompt é mais rigoroso. Ele força a IA a admitir se o áudio
+        // estiver silencioso, em vez de inventar uma transcrição.
         const textPrompt = `
-Você é um assistente especializado em processar áudios de reuniões de pais do Método Kumon. Sua tarefa é gerar um relatório estruturado em JSON com base no ÁUDIO EM ANEXO e nos dados de contexto do "brain.json".
+Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO em anexo e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
-O áudio foi gravado em uma reunião de pais. Siga rigorosamente as diretrizes abaixo:
+REGRAS RÍGIDAS (NÃO QUEBRE):
+1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
+2.  **NÃO INVENTE TRANSCRIÇÃO**: Se o áudio for silencioso, NÃO gere uma transcrição baseada no contexto. A transcrição DEVE vir 100% do áudio.
+3.  **USE O CONTEXTO**: Após transcrever, use o "brain.json" para identificar alunos (fuzzy match) e preencher o resto do relatório.
+4.  **SEJA FIEL AOS FATOS**: O resumo executivo e as dores DEVEM ser baseados no que foi dito no áudio. Use o "brain.json" apenas para confirmar dados (como ID do aluno ou estágio).
 
-1. **TRANSCREVA O ÁUDIO**: Primeiro, transcreva o áudio em português BR, segmentando por falante.
-2. **NÃO INVENTE DADOS**: Toda afirmação sobre um aluno deve derivar explicitamente do áudio transcrito ou do "brain.json".
-3. **Fuzzy Matching**: Identifique menções a alunos no áudio usando fuzzy matching com os nomes no "brain.json".
-4. **Validação Humana**: Se houver ambiguidades, marque "requer_validacao_humana: true".
-5. **Confiança**: Inclua "confidence" (0.0-1.0) para cada inferência.
-
-O "brain.json" (contexto) contém os seguintes alunos:
+CONTEXTO (brain.json):
 ${JSON.stringify(brainData, null, 2)}
 
-Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json":
+PROCESSE O ÁUDIO ANEXO e retorne APENAS o JSON.
+
+FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 {
   "meta": {
     "created_at": "${new Date().toISOString()}",
@@ -288,10 +293,10 @@ Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json"
     "parts": 1
   },
   "consentimentos": [],
-  "transcription_raw": "string completa da transcrição do áudio",
+  "transcription_raw": "string completa da transcrição REAL do áudio",
   "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
   "mentions_alunos": [{"aluno_id": "string", "nome": "string", "context": "string", "confidence": "number"}],
-  "resumo_executivo": "string",
+  "resumo_executivo": "string (Baseado na transcrição E no brain.json)",
   "decisoes_sugeridas": [{"texto": "string", "responsavel_sugerido": "string", "prazo_sugerido_days": "number", "source_evidence": "string"}],
   "itens_acao": [{"descricao": "string", "responsavel": "string", "prazo_days": "number", "prioridade": "string"}],
   "dores_familia": [{"familia_nome": "string", "dor_texto": "string", "evidencia_texto": "string", "confidence": "number"}],
@@ -299,7 +304,7 @@ Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json"
   "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string", "evidencia": "string"}],
   "audit_log": [{"action": "string", "by": "model|user", "timestamp": "${new Date().toISOString()}", "details": "string"}],
   "requer_validacao_humana": true,
-  "sources": ["brain.json", "audio_input"]
+  "sources": ["brain.json", "audio_input_real"]
 }
         `;
 
@@ -338,19 +343,32 @@ Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json"
         }
 
         const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!text) {
-            throw new Error('Gemini não retornou um texto válido.');
+        
+        if (!data.candidates || !data.candidates[0].content.parts[0].text) {
+             throw new Error('Resposta inesperada da API Gemini. O modelo pode não ter retornado texto.');
         }
+
+        const text = data.candidates[0].content.parts[0].text;
         
         // Como solicitamos JSON, o 'text' deve ser a string JSON
         try {
-            return JSON.parse(text);
+            const resultJson = JSON.parse(text);
+            
+            // VERIFICAÇÃO DE SIMULAÇÃO: Checa se a IA obedeceu a regra de áudio silencioso
+            if (resultJson.erro) {
+                throw new Error(`IA reportou um erro: ${resultJson.erro}`);
+            }
+
+            return resultJson;
+
         } catch (e) {
-            console.error('Erro ao parsear JSON do Gemini:', e);
+            console.error('Erro ao parsear JSON do Gemini ou erro reportado pela IA:', e.message);
             console.error('Texto retornado (esperava JSON):', text);
-            throw new Error('O modelo retornou um JSON inválido. Verifique o console para mais detalhes.');
+            // Se o JSON.parse falhar, mas a IA reportou um erro (que não é JSON), mostramos
+            if (e.message.includes("IA reportou um erro:")) {
+                throw e;
+            }
+            throw new Error('O modelo retornou um JSON inválido ou uma resposta inesperada.');
         }
     },
     // =====================================================================
@@ -561,7 +579,7 @@ Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json"
                             <p class="student-responsible">Responsável: ${student.responsible}</p>
                         </div>
                     </div>
-                    <div class="student-stages">
+                    <div class.="student-stages">
                         ${student.mathStage ? `<div class="stage-item"><span class="stage-label">Mat</span>${student.mathStage}</div>` : ''}
                         ${student.portStage ? `<div class="stage-item"><span class="stage-label">Port</span>${student.portStage}</div>` : ''}
                         ${student.engStage ? `<div class="stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
@@ -812,7 +830,7 @@ Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json"
             <div class="history-item">
                 <div class="history-item-header">
                     <span class="history-date">${date}</span>
-                    <span class="history-type">${entry.type || 'REGISTRO'}</span>
+                    <span class.="history-type">${entry.type || 'REGISTRO'}</span>
                 </div>
                 ${detailsHTML}
                 <button class="delete-history-btn" onclick="App.deleteHistoryEntry('${type}', '${entry.id}')" title="Excluir">&times;</button>
