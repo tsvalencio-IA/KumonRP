@@ -211,14 +211,12 @@ const App = {
         }
 
         // =====================================================================
-        // ================= CORREÇÃO: ENDPOINT E TYPO =======================
+        // ================= CORREÇÃO: NOME DO MODELO ========================
         // =====================================================================
-        // 1. Revertendo para `v1beta`. O erro 400 prova
-        //    que `v1` não aceita `fileData`. Agora que a chave de API
-        //    está correta, `v1beta` deve funcionar.
-        // 2. Corrigindo `responseMimeType` para `response_mime_type` (snake_case).
+        // O log prova que `v1beta` não tem `...-latest`.
+        // A correção final é usar `v1beta` com o nome de modelo `gemini-1.5-flash`.
         // =====================================================================
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
@@ -273,9 +271,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                     ]
                 }
             ],
-            // Configuração para garantir que a saída seja JSON
             "generationConfig": {
-                "response_mime_type": "application/json" // <--- CORREÇÃO (snake_case)
+                "response_mime_type": "application/json" 
             }
         };
 
@@ -746,7 +743,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 break;
         }
         return `
-            <div class="history-item">
+            <div class-="history-item">
                 <div class="history-item-header">
                     <span class="history-date">${date}</span>
                 </div>
@@ -875,8 +872,8 @@ ${'='.repeat(50)}
     promptForReset() {
         const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
         if (code === '*177') {
-            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite 'APAGAR TUDO' e clique em OK.");
-            if (confirmation === 'APAGAR TUDO') {
+            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite '*177' e clique em OK.");
+            if (confirmation === '*177') {
                 this.hardResetUserData();
             } else {
                 alert("Operação de reset cancelada.");
