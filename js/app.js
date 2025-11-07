@@ -61,11 +61,16 @@ const App = {
             programmingForm: document.getElementById('programmingForm'),
             reportForm: document.getElementById('reportForm'),
             performanceForm: document.getElementById('performanceForm'),
-            programmingHistory: document.getElementById('programmingHistory'),
-            reportHistory: document.getElementById('reportHistory'),
-            performanceHistory: document.getElementById('performanceHistory'),
             studentAnalysisContent: document.getElementById('student-analysis-content'),
             
+            // =====================================================================
+            // ======================= CORREÇÃO DO BUG 1 =========================
+            // =====================================================================
+            // Mapeia os containers de histórico para as chaves lógicas corretas
+            programmingHistory: document.getElementById('programmingHistory'),
+            reportHistory: document.getElementById('reportHistory'),
+            performanceLog: document.getElementById('performanceHistory'), // <--- CORRIGIDO
+
             // Módulo Brain
             brainFileUpload: document.getElementById('brainFileUpload'),
             uploadBrainFileBtn: document.getElementById('uploadBrainFileBtn'),
@@ -95,7 +100,7 @@ const App = {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab)));
         this.elements.programmingForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'programmingHistory', this.elements.programmingForm));
         this.elements.reportForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'reportHistory', this.elements.reportForm));
-        this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm));
+        this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm)); // <--- CORRETO
         this.elements.studentModal.addEventListener('click', (e) => { if (e.target === this.elements.studentModal) this.closeStudentModal(); });
     },
     
@@ -209,17 +214,9 @@ const App = {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
 
-        // =====================================================================
-        // ================= CORREÇÃO: NOME DO MODELO DA API ===================
-        // =====================================================================
-        // Revertendo para o nome oficial 'latest'. O erro 404 (Not Found)
-        // indica um problema de configuração no projeto Google, não um typo.
+        // Mantendo o nome oficial 'latest'. O erro 404 é de configuração do Cloud.
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
-        // =====================================================================
 
-        // =====================================================================
-        // ================ PROMPT ANTI-ALUCINAÇÃO (REAL) ===================
-        // =====================================================================
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
@@ -259,7 +256,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 }
         `;
 
-        // Corpo da requisição formatado para multimodal (texto + URL de áudio)
         const requestBody = {
             "contents": [
                 {
@@ -274,7 +270,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                     ]
                 }
             ],
-            // Configuração para garantir que a saída seja JSON
             "generationConfig": {
                 "responseMimeType": "application/json"
             }
@@ -304,7 +299,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         try {
             const resultJson = JSON.parse(text);
             
-            // VERIFICAÇÃO DE SIMULAÇÃO
             if (resultJson.erro) {
                 throw new Error(`IA reportou um erro: ${resultJson.erro}`);
             }
@@ -320,10 +314,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             throw new Error('O modelo retornou um JSON inválido ou uma resposta inesperada.');
         }
     },
-    // =====================================================================
-    // ====================== FIM DAS CORREÇÕES DE IA ======================
-    // =====================================================================
-
+    
     renderReport(reportData) {
         this.elements.reportContent.textContent = JSON.stringify(reportData, null, 2);
     },
@@ -357,23 +348,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     
     // =====================================================================
     // ======================== LÓGICA DE DADOS (CORE) =====================
-    // ============ REFATORADO PARA CAMINHOS DE NÓ CORRETOS ================
     // =====================================================================
     
-    /**
-     * Retorna uma referência de nó do Realtime Database dentro do namespace do usuário.
-     * @param {string} nodePath O caminho dentro do nó do usuário (ex: 'alunos/lista_alunos' ou 'brain')
-     */
     getNodeRef(nodePath) {
         if (!this.state.userId) return null;
-        // Caminho final: gestores/{USER_ID}/{nodePath}
         return this.state.db.ref(`gestores/${this.state.userId}/${nodePath}`);
     },
 
-    /**
-     * Busca dados de um nó específico.
-     * @param {string} nodePath O caminho dentro do nó do usuário.
-     */
     async fetchData(nodePath) {
         const nodeRef = this.getNodeRef(nodePath);
         if (!nodeRef) return null;
@@ -381,23 +362,16 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         return snapshot.exists() ? snapshot.val() : null;
     },
 
-    /**
-     * Define (sobrescreve) dados em um nó específico.
-     * @param {string} nodePath O caminho dentro do nó do usuário.
-     * @param {object} data Os dados a serem salvos.
-     */
     async setData(nodePath, data) {
         const nodeRef = this.getNodeRef(nodePath);
         if (nodeRef) await nodeRef.set(data);
     },
 
     // =====================================================================
-    // ======================== NOVO: GESTÃO DO BRAIN.JSON =================
-    // ================== REFATORADO PARA CAMINHOS CORRETOS ================
+    // ======================== GESTÃO DO BRAIN.JSON =======================
     // =====================================================================
     
     async fetchBrainData() {
-        // Busca de: gestores/{USER_ID}/brain
         const brainData = await this.fetchData('brain'); 
         if (brainData) {
             return brainData;
@@ -408,8 +382,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     
     async saveBrainData(brainData) {
-        // Salva em: gestores/{USER_ID}/brain
-        // Isso corrige o bug do aninhamento extra { brain: { brain: ... } }
         await this.setData('brain', brainData); 
     },
     
@@ -438,7 +410,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             let currentBrainData = await this.fetchBrainData();
             const mergedBrainData = this.deepMerge(currentBrainData, newBrainData);
             
-            // Salva os dados mesclados no caminho correto
             await this.saveBrainData(mergedBrainData);
 
             alert('Arquivo JSON enviado e "brain.json" atualizado com sucesso no Firebase!');
@@ -470,12 +441,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         return (item && typeof item === 'object' && !Array.isArray(item));
     },
     // =====================================================================
-    // ======================= MÓDULO DE ALUNOS (REVISADO) =================
-    // ================== REFATORADO PARA CAMINHOS CORRETOS ================
+    // ======================= MÓDULO DE ALUNOS ============================
     // =====================================================================
     async loadStudents() {
         try {
-            // Busca de: gestores/{USER_ID}/alunos/lista_alunos
             const data = await this.fetchData('alunos/lista_alunos');
             this.state.students = (data && data.students) ? data.students : {};
             this.renderStudentList();
@@ -496,11 +465,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             this.elements.studentList.innerHTML = `<div class="empty-state"><p>📚 ${searchTerm ? 'Nenhum aluno encontrado.' : 'Nenhum aluno cadastrado.'}</p><p>Clique em "Adicionar Novo Aluno" para começar!</p></div>`;
             return;
         }
-
-        // =====================================================================
-        // ======================= CORREÇÃO DO TYPO (ANTERIOR) ==============
-        // =====================================================================
-        // Garantindo que a variável 'filteredStudents' está correta.
+        
         this.elements.studentList.innerHTML = filteredStudents
             .sort(([, a], [, b]) => a.name.localeCompare(b.name))
             .map(([id, student]) => `
@@ -534,13 +499,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             document.getElementById('portStage').value = student.portStage || '';
             document.getElementById('engStage').value = student.engStage || '';
             this.elements.deleteStudentBtn.style.display = 'block';
-            this.loadStudentHistories(studentId); // <--- Onde os erros de cache ocorrem
+            this.loadStudentHistories(studentId); 
             this.elements.studentAnalysisContent.textContent = 'Clique em "Gerar Nova Análise" para começar.';
         } else {
             this.elements.modalTitle.textContent = '👨‍🎓 Adicionar Novo Aluno';
             this.elements.studentIdInput.value = '';
             this.elements.deleteStudentBtn.style.display = 'none';
-            this.clearStudentHistories(); // <--- Onde os erros de cache ocorrem
+            this.clearStudentHistories(); 
             this.elements.studentAnalysisContent.textContent = 'Salve o aluno para poder gerar uma análise.';
         }
         this.switchTab('programming');
@@ -580,7 +545,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.state.students[studentId] = studentData;
         
         try {
-            // Salva em: gestores/{USER_ID}/alunos/lista_alunos
             await this.setData('alunos/lista_alunos', { students: this.state.students });
             
             this.renderStudentList();
@@ -591,7 +555,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 this.elements.deleteStudentBtn.style.display = 'block';
             }
             
-            // ATUALIZA O NÓ 'brain'
             await this.updateBrainFromStudents();
             alert('Aluno salvo com sucesso!');
         } catch (error) {
@@ -607,12 +570,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         delete this.state.students[this.state.currentStudentId];
         
         try {
-            // Salva em: gestores/{USER_ID}/alunos/lista_alunos
             await this.setData('alunos/lista_alunos', { students: this.state.students });
             this.renderStudentList();
             this.closeStudentModal();
             
-            // ATUALIZA O NÓ 'brain'
             await this.updateBrainFromStudents();
             alert('Aluno excluído com sucesso!');
         } catch (error) {
@@ -622,17 +583,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     
     async updateBrainFromStudents() {
-        // NÃO buscamos mais o 'brain.json' estático.
-        // Buscamos o 'brain' dinâmico do Firebase.
         let currentBrainData = await this.fetchBrainData();
-        let updatedBrain = { ...currentBrainData }; // Inicia com o cérebro existente
+        let updatedBrain = { ...currentBrainData }; 
 
-        // Garante que o nó de alunos exista dentro do cérebro
         if (!updatedBrain.alunos) {
             updatedBrain.alunos = {};
         }
         
-        // Sincronização: Remove do 'brain' alunos que não existem mais em 'state.students'
         const currentStudentIds = Object.keys(this.state.students);
         for (const brainId in updatedBrain.alunos) {
             if (!currentStudentIds.includes(brainId)) {
@@ -640,7 +597,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             }
         }
 
-        // Sincronização: Adiciona/Atualiza alunos do 'state.students' para o 'brain'
         for (const [id, student] of Object.entries(this.state.students)) {
             updatedBrain.alunos[id] = {
                 id: id,
@@ -650,34 +606,33 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 estagio_matematica: student.mathStage,
                 estagio_portugues: student.portStage,
                 estagio_ingles: student.engStage,
-                // Mantém metas/observações que podem ter vindo do 'brain.json' carregado
                 historico: student.performanceLog || [],
                 metas: updatedBrain.alunos[id]?.metas || {}, 
                 observacoes: updatedBrain.alunos[id]?.observacoes || [] 
             };
         }
         
-        // Salva o cérebro atualizado no caminho correto
         await this.saveBrainData(updatedBrain);
         console.log("brain.json atualizado com base nos alunos da plataforma (Realtime DB).");
     },
     loadStudentHistories(studentId) {
         const student = this.state.students[studentId];
         if (!student) return this.clearStudentHistories();
+        // As chamadas aqui estão corretas e agora encontrarão os elementos no 'map'
         this.renderHistory('programmingHistory', student.programmingHistory || []);
         this.renderHistory('reportHistory', student.reportHistory || []);
         this.renderHistory('performanceLog', student.performanceLog || []);
     },
     clearStudentHistories() {
-        // Assegura que os elementos existem antes de tentar acessá-los
+        // As chaves aqui estão corretas e agora encontrarão os elementos no 'map'
         if (this.elements.programmingHistory) {
             this.elements.programmingHistory.innerHTML = '<p>Nenhuma programação registrada.</p>';
         }
         if (this.elements.reportHistory) {
             this.elements.reportHistory.innerHTML = '<p>Nenhum boletim registrado.</p>';
         }
-        if (this.elements.performanceHistory) {
-            this.elements.performanceHistory.innerHTML = '<p>Nenhum registro de desempenho.</p>';
+        if (this.elements.performanceLog) { // <--- CORRIGIDO
+            this.elements.performanceLog.innerHTML = '<p>Nenhum registro de desempenho.</p>';
         }
     },
     
@@ -730,7 +685,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.state.students[this.state.currentStudentId][historyType].push(entry);
         
         try {
-            // Salva o objeto 'students' inteiro no caminho correto
             await this.setData('alunos/lista_alunos', { students: this.state.students });
             
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
@@ -744,8 +698,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
 
     renderHistory(historyType, historyData) {
-        const container = this.elements[historyType];
-        // Verificação de segurança (causa do erro de cache)
+        const container = this.elements[historyType]; // Agora 'performanceLog' será encontrado
         if (!container) {
             console.error(`Elemento de container '${historyType}' não encontrado no DOM.`);
             return;
@@ -770,10 +723,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         let date = 'Data Inválida';
 
         if (entryDateStr) {
-            if (entryDateStr.includes('T')) { // É um ISOString (createdAt)
+            if (entryDateStr.includes('T')) {
                 date = new Date(entryDateStr).toLocaleDateString('pt-BR');
-            } else if (entryDateStr.includes('-')) { // É um "YYYY-MM-DD" (entry.date)
-                const parts = entryDateStr.split('-'); // [YYYY, MM, DD]
+            } else if (entryDateStr.includes('-')) {
+                const parts = entryDateStr.split('-');
                 const localDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
                 date = localDate.toLocaleDateString('pt-BR');
             }
@@ -781,8 +734,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         switch (type) {
             case 'programmingHistory':
-                // Este código está correto e, após a limpeza do cache,
-                // exibirá "matematica d1-d10"
                 detailsHTML = `<div class="history-details"><strong>Material:</strong> ${entry.material || ''}</div>${entry.notes ? `<div class="history-details"><strong>Obs:</strong> ${entry.notes}</div>` : ''}`;
                 break;
             case 'reportHistory':
@@ -801,9 +752,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 <button class="delete-history-btn" onclick="App.deleteHistoryEntry('${type}', '${entry.id}')" title="Excluir">&times;</button>
             </div>`;
     },
-    // =====================================================================
-    // =====================================================================
-
+    
     async deleteHistoryEntry(historyType, entryId) {
         if (!confirm('Tem certeza que deseja excluir este registro do histórico?')) return;
         
@@ -822,6 +771,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             this.loadStudents(); 
         }
     },
+    
+    // =====================================================================
+    // ====================== CORREÇÃO DO BUG 3 (IA) =======================
+    // =====================================================================
     async analyzeStudent(studentId) {
         if (!studentId) return;
         const analysisContent = this.elements.studentAnalysisContent;
@@ -835,55 +788,81 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         const performanceLog = Array.isArray(student.performanceLog) ? student.performanceLog : Object.values(student.performanceLog || {});
         const reportHistory = Array.isArray(student.reportHistory) ? student.reportHistory : Object.values(student.reportHistory || {});
         const programmingHistory = Array.isArray(student.programmingHistory) ? student.programmingHistory : Object.values(student.programmingHistory || {});
-
         
+        // Combina todos os registros para verificar se há dados suficientes
+        const totalHistoryEntries = performanceLog.length + reportHistory.length + programmingHistory.length;
+
         let analysis = `ANÁLISE INTELIGENTE - ${student.name}
 ${'='.repeat(50)}
 `;
-        const repetitions = performanceLog.filter(e => e.type === 'REPETICAO');
-        if (repetitions.length >= 3) {
-            analysis += `🚨 ALERTA DE PLATÔ: ${repetitions.length} repetições registradas.
+        // Flag para rastrear se alguma análise real foi adicionada
+        let hasInsights = false;
+        
+        // Verifica se há dados suficientes para uma análise
+        if (totalHistoryEntries < 2) {
+            analysis += `💡 DADOS INSUFICIENTES:
+   Ainda não há histórico suficiente para gerar uma análise de tendências.
+   
+   AÇÃO: Continue registrando o desempenho, programação e boletins do aluno.
+`;
+        } else {
+            // Lógica de análise (executa apenas se houver dados)
+            const repetitions = performanceLog.filter(e => e.type === 'REPETICAO');
+            if (repetitions.length >= 3) {
+                analysis += `🚨 ALERTA DE PLATÔ: ${repetitions.length} repetições registradas.
    AÇÃO: Revisar material e agendar orientação individual.
 `;
-        } else if (repetitions.length > 0) {
-            analysis += `⚠️ ATENÇÃO: ${repetitions.length} repetição(ões) registrada(s).
+                hasInsights = true;
+            } else if (repetitions.length > 0) {
+                analysis += `⚠️ ATENÇÃO: ${repetitions.length} repetição(ões) registrada(s).
    AÇÃO: Monitorar o próximo bloco com atenção.
 `;
-        }
-        const lowGrades = reportHistory.filter(e => parseFloat(e.grade) < 7);
-        if (lowGrades.length > 0) {
-            analysis += `📊 PONTO DE ATENÇÃO (BOLETIM):
+                hasInsights = true;
+            }
+            
+            const lowGrades = reportHistory.filter(e => parseFloat(e.grade) < 7);
+            if (lowGrades.length > 0) {
+                analysis += `📊 PONTO DE ATENÇÃO (BOLETIM):
    Nota(s) abaixo de 7.0 em: ${lowGrades.map(e => e.subject).join(', ')}.
    AÇÃO: Agendar reunião com os pais para alinhar estratégias.
 `;
-        }
-        const alerts = performanceLog.filter(e => e.type === 'ALERTA');
-        if (alerts.length > 0) {
-            const lastAlert = alerts[alerts.length - 1];
-            const alertDate = lastAlert.date || lastAlert.createdAt;
-            // Corrigido para lidar com data indefinida
-            const displayDate = alertDate ? new Date(alertDate + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'data desconhecida';
-            analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
+                hasInsights = true;
+            }
+            
+            const alerts = performanceLog.filter(e => e.type === 'ALERTA');
+            if (alerts.length > 0) {
+                const lastAlert = alerts[alerts.length - 1];
+                const alertDate = lastAlert.date || lastAlert.createdAt;
+                const displayDate = alertDate ? new Date(alertDate + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'data desconhecida';
+                analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
    - "${lastAlert.details}" (${displayDate})
    AÇÃO: Verificar se o problema foi resolvido.
 `;
+                hasInsights = true;
+            }
+            
+            analysis += `💡 SUGESTÃO ESTRATÉGICA:
+`;
+            if (repetitions.length >= 3 && lowGrades.length > 0) {
+                analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
+`;
+            } else if (!hasInsights) {
+                // Se nenhum alerta foi disparado, E temos dados suficientes,
+                // aí sim podemos dizer que o progresso é estável.
+                analysis += `   O progresso parece estável. Manter o acompanhamento e registrar elogios para reforço positivo.
+`;
+            } else {
+                 analysis += `   Revisar os pontos de atenção acima e focar nas ações sugeridas.
+`;
+            }
         }
-        analysis += `💡 SUGESTÃO ESTRATÉGICA:
-`;
-        if (repetitions.length >= 3 && lowGrades.length > 0) {
-            analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
-`;
-        } else if (programmingHistory.length === 0) {
-            analysis += `   O aluno não possui programação registrada. Iniciar a programação de materiais é fundamental para acompanhar o progresso.
-`;
-        } else {
-            analysis += `   O progresso parece estável. Manter o acompanhamento e registrar elogios para reforço positivo.
-`;
-        }
+        
         analysis += `
 Última atualização: ${new Date().toLocaleString('pt-BR')}`;
         analysisContent.textContent = analysis;
     },
+    // =====================================================================
+
     // Esta função é usada APENAS para anexos de boletins
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
@@ -917,9 +896,7 @@ ${'='.repeat(50)}
     async hardResetUserData() {
         alert("A iniciar o reset completo do sistema. A página será recarregada ao concluir.");
         try {
-            // Caminho para apagar todos os dados do usuário no Realtime DB
-            // Caminho: gestores/{USER_ID}
-            const userRootRef = this.getNodeRef(''); // String vazia para pegar a raiz do usuário
+            const userRootRef = this.getNodeRef('');
             await userRootRef.remove();
             
             alert("Sistema resetado com sucesso.");
