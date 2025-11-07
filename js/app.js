@@ -201,7 +201,7 @@ const App = {
     },
 
     /**
-     * NOVA ARQUITETURA: Chama a API v1beta (AI Studio) com a nova chave.
+     * ARQUITETURA: Chama a API v1beta (AI Studio) com a nova chave.
      */
     async callGeminiForAnalysis(audioUrl, mimeType, brainData) {
         if (!window.GEMINI_API_KEY) {
@@ -209,7 +209,7 @@ const App = {
         }
 
         // =====================================================================
-        // ================= CORREÇÃO DE ARQUITETURA FINAL =====================
+        // ================= ARQUITETURA CORRETA (AI STUDIO) ===================
         // =====================================================================
         // 1. Usando a API `v1beta` (que aceita `fileData` para URLs).
         // 2. Usando o modelo `gemini-1.5-flash` (sem o `-latest`).
