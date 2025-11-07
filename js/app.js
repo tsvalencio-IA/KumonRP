@@ -16,7 +16,18 @@ const App = {
     // ======================== INICIALIZAÇÃO E SETUP ======================
     // =====================================================================
     init(user, firestoreInstance) {
-        document.getElementById('loading-overlay').style.display = 'none';
+        // CORREÇÃO: A tela de login não estava sendo escondida corretamente.
+        // Adicionando verificação de 'loading-overlay' se existir.
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
+        }
+        
+        const loginScreen = document.getElementById('login-screen');
+        if (loginScreen) {
+            loginScreen.classList.add('hidden');
+        }
+
         document.getElementById('app-container').classList.remove('hidden');
         this.state.userId = user.uid;
         this.state.db = firestoreInstance;
@@ -147,6 +158,15 @@ const App = {
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
 
         try {
+            // ALERTA DE ERRO DE DESIGN:
+            // A função callGeminiForAnalysis abaixo está quebrada.
+            // Ela envia uma URL para a API do Gemini, mas a API não pode processar áudio de URLs.
+            // Esta função precisa ser reescrita para usar uma API de Speech-to-Text PRIMEIRO.
+            // O código abaixo irá falhar na etapa callGeminiForAnalysis.
+            alert("ERRO DE DESIGN: A função 'callGeminiForAnalysis' não é funcional. A API do Gemini não pode ler áudio de uma URL. Verifique o console para mais detalhes e a nota no código-fonte.");
+            console.error("ERRO DE DESIGN: A função 'callGeminiForAnalysis' está quebrada. Ela envia uma URL para a API do Gemini, mas a API não pode processar áudio de URLs. Você deve usar uma API de Speech-to-Text primeiro e depois enviar a transcrição para o Gemini.");
+
+
             const audioFile = this.elements.audioUpload.files[0];
             let audioBlob = audioFile;
 
@@ -181,7 +201,7 @@ const App = {
     },
     async uploadAudioToCloudinary(audioBlob) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-            throw new Error('Configuração do Cloudinary não encontrada em JTS/config.js');
+            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
         }
 
         // Converter blob para File se necessário
@@ -210,8 +230,16 @@ const App = {
     },
     async callGeminiForAnalysis(audioUrl, brainData) {
         if (!window.GEMINI_API_KEY) {
-            throw new Error('GEMINI_API_KEY não encontrada em JTS/config.js. O sistema não pode processar o áudio sem uma chave válida.');
+            throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
+
+        // ALERTA DE ERRO DE DESIGN:
+        // O prompt abaixo tenta fazer a API Gemini processar um áudio a partir de uma URL (${audioUrl}).
+        // A API generativelanguage.googleapis.com NÃO FAZ ISSO.
+        // Esta chamada irá falhar ou retornar uma resposta de texto que ignora o áudio.
+        // O correto seria usar uma API de Speech-to-Text ou uma API multimodal (como a File API do Gemini)
+        // enviando os *dados* do áudio, não uma URL.
+        console.error("callGeminiForAnalysis: Esta função está enviando uma URL para uma API de texto. Isso não vai funcionar.");
 
         // Preparar prompt para o Gemini
         const prompt = `
@@ -436,8 +464,16 @@ Gere um JSON com os seguintes campos exatos:
             const doc = await this.getDocRef('alunos', 'lista_alunos').get();
             this.state.students = doc.exists ? doc.data().students || {} : {};
             this.renderStudentList();
-            // ATUALIZAÇÃO: Sincroniza o brain.json com a lista de alunos carregada
-            await this.updateBrainFromStudents();
+            
+            // =================================================================
+            // ======================== CORREÇÃO DE BUG ========================
+            // =================================================================
+            // A LINHA ABAIXO FOI REMOVIDA na correção anterior.
+            // Ela causava um bug que apagava todos os alunos do 'brain.json'
+            // sempre que a página era carregada.
+            // await this.updateBrainFromStudents();
+            // =================================================================
+
         } catch (error) {
             console.error('Erro ao carregar alunos:', error);
             alert('Não foi possível carregar os dados dos alunos.');
@@ -747,7 +783,7 @@ ${'='.repeat(50)}
     },
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-            throw new Error('Configuração do Cloudinary não encontrada em JTS/config.js');
+            throw new Error('Configuração do Cloudinary não encontrada em js/config.js');
         }
         const formData = new FormData();
         formData.append('file', file);
@@ -761,9 +797,7 @@ ${'='.repeat(50)}
     promptForReset() {
         const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
         if (code === '*177') {
-            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!
-Isto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.
-Para confirmar, digite 'APAGAR TUDO' e clique em OK.");
+            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite 'APAGAR TUDO' e clique em OK.");
             if (confirmation === 'APAGAR TUDO') {
                 this.hardResetUserData();
             } else {
