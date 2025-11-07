@@ -267,8 +267,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         const data = await response.json();
         
-        // O código 'JSON.parse(text)' abaixo já lida com a resposta
-        // de texto plano que esperamos agora.
         if (!data.candidates || !data.candidates[0].content.parts[0].text) {
              throw new Error('Resposta inesperada da API Gemini. O modelo pode não ter retornado texto.');
         }
@@ -276,7 +274,17 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         const text = data.candidates[0].content.parts[0].text;
         
         try {
-            const resultJson = JSON.parse(text);
+            // A resposta da API (sem generationConfig) pode vir com
+            // marcadores de markdown (```json ... ```). Vamos limpá-los.
+            let cleanText = text.trim();
+            if (cleanText.startsWith("```json")) {
+                cleanText = cleanText.substring(7); // Remove ```json
+            }
+            if (cleanText.endsWith("```")) {
+                cleanText = cleanText.substring(0, cleanText.length - 3); // Remove ```
+            }
+
+            const resultJson = JSON.parse(cleanText);
             
             if (resultJson.erro) {
                 throw new Error(`IA reportou um erro: ${resultJson.erro}`);
