@@ -211,13 +211,15 @@ const App = {
         }
 
         // =====================================================================
-        // ================= CORREÇÃO: ENDPOINT DA API =======================
+        // ================= CORREÇÃO: ENDPOINT E TYPO =======================
         // =====================================================================
-        // O erro confirma que `v1beta` está errado.
-        // A correção é mudar para o endpoint estável `v1`.
-        const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        // 1. Revertendo para `v1beta`. O erro 400 prova
+        //    que `v1` não aceita `fileData`. Agora que a chave de API
+        //    está correta, `v1beta` deve funcionar.
+        // 2. Corrigindo `responseMimeType` para `response_mime_type` (snake_case).
         // =====================================================================
-
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
@@ -271,8 +273,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                     ]
                 }
             ],
+            // Configuração para garantir que a saída seja JSON
             "generationConfig": {
-                "responseMimeType": "application/json"
+                "response_mime_type": "application/json" // <--- CORREÇÃO (snake_case)
             }
         };
 
