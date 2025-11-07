@@ -1,10 +1,9 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
-// REFATORADO PARA USAR O REALTIME DATABASE E IA REAL (VIA CLOUDINARY URL)
+// RE-ARQUITETADO PARA USAR A CHAVE DO "AI STUDIO" (v1beta)
 const App = {
     state: {
         userId: null,
         db: null, // Agora será uma instância do Realtime Database
-        // functions: null, // REMOVIDO - Não usaremos Cloud Functions
         students: {},
         currentStudentId: null,
         reportData: null,
@@ -120,23 +119,44 @@ const App = {
     },
 
     // =====================================================================
-    // ================== ARQUITETURA DE IA (Base64) =======================
+    // ================== ARQUITETURA DE IA (AI Studio Key) ================
     // =====================================================================
 
     /**
-     * NOVO: Converte um arquivo (File) para uma string Base64.
+     * Esta função (upload para Cloudinary) PERMANECE.
      */
-    fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => {
-                // Remove o prefixo "data:audio/ogg;base64,"
-                const base64String = reader.result.split(',')[1];
-                resolve(base64String);
-            };
-            reader.onerror = (error) => reject(error);
+    async uploadAudioToCloudinary(audioBlob) {
+        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
+            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
+        }
+
+        if (!(audioBlob instanceof File)) {
+            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
+        }
+
+        const formData = new FormData();
+        formData.append('file', audioBlob);
+        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
+        formData.append('folder', `${this.state.userId}/reunioes`);
+        
+        // Usar 'raw' permite que a IA busque o arquivo
+        formData.append('resource_type', 'raw');
+
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
+            method: 'POST',
+            body: formData
         });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
+        }
+
+        const result = await response.json();
+        return {
+            url: result.secure_url,
+            mimeType: audioBlob.type
+        };
     },
 
     async processAudioWithAI() {
@@ -155,18 +175,13 @@ const App = {
             // Obter brain.json do Firebase (Contexto)
             const brainData = await this.fetchBrainData();
 
-            // Etapa 1: Converter áudio para Base64 (NÃO usamos mais Cloudinary aqui)
-            this.elements.reportContent.textContent = 'Codificando áudio (Base64)...';
-            const base64Audio = await this.fileToBase64(audioParaProcessar);
-            const mimeType = audioParaProcessar.type;
-            
-            if (!base64Audio) {
-                throw new Error("Falha ao converter áudio para Base64.");
-            }
+            // Etapa 1: Enviar para o Cloudinary (para obter uma URL)
+            this.elements.reportContent.textContent = 'Enviando áudio para o Cloudinary (banco de arquivos)...';
+            const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioParaProcessar);
 
-            // Etapa 2: Chamar a API Generative Language (v1) com os dados
-            this.elements.reportContent.textContent = 'Enviando dados do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
-            const analysis = await this.callGeminiForAnalysis(base64Audio, mimeType, brainData || {});
+            // Etapa 2: Chamar a API Generative Language (v1beta) com a URL
+            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
+            const analysis = await this.callGeminiForAnalysis(audioUrl, uploadedMimeType, brainData || {});
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -178,7 +193,6 @@ const App = {
             this.elements.audioFileName.textContent = "";
             this.elements.processAudioBtn.disabled = true;
 
-
         } catch (error) {
             console.error('Erro ao processar áudio:', error);
             this.elements.reportContent.textContent = `Erro ao processar áudio: ${error.message}`;
@@ -187,20 +201,27 @@ const App = {
     },
 
     /**
-     * Chama a API Generative Language (v1) com dados Base64.
+     * NOVA ARQUITETURA: Chama a API v1beta (AI Studio) com a nova chave.
      */
-    async callGeminiForAnalysis(base64Audio, mimeType, brainData) {
+    async callGeminiForAnalysis(audioUrl, mimeType, brainData) {
         if (!window.GEMINI_API_KEY) {
-            throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
+            throw new Error('GEMINI_API_KEY (do AI Studio) não encontrada em js/config.js.');
         }
 
-        const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        // =====================================================================
+        // ================= CORREÇÃO DE ARQUITETURA FINAL =====================
+        // =====================================================================
+        // 1. Usando a API `v1beta` (que aceita `fileData` para URLs).
+        // 2. Usando o modelo `gemini-1.5-flash` (sem o `-latest`).
+        // 3. Usando a chave de API do "AI Studio" (do config.js).
+        // =====================================================================
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const textPrompt = `
-Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido como dados Base64) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
+Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
 REGRAS RÍGIDAS (NÃO QUEBRE):
-1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
+1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio na URL fornecida. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
 2.  **NÃO INVENTE TRANSCRIÇÃO**: Se o áudio for silencioso, NÃO gere uma transcrição baseada no contexto. A transcrição DEVE vir 100% do áudio.
 3.  **USE O CONTEXTO**: Após transcrever, use o "brain.json" para identificar alunos (fuzzy match) e preencher o resto do relatório.
 4.  **SEJA FIEL AOS FATOS**: O resumo executivo e as dores DEVEM ser baseados no que foi dito no áudio. Use o "brain.json" apenas para confirmar dados (como ID do aluno ou estágio).
@@ -208,11 +229,11 @@ REGRAS RÍGIDAS (NÃO QUEBRE):
 CONTEXTO (brain.json):
 ${JSON.stringify(brainData, null, 2)}
 
-PROCESSE O ÁUDIO e retorne APENAS o JSON.
+PROCESSE O ÁUDIO (na URL) e retorne APENAS o JSON.
 
 FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 {
-  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "duration_s": "REAL_DURATION_IN_SECONDS", "parts": 1 },
+  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "audio_url": "${audioUrl}", "duration_s": "REAL_DURATION_IN_SECONDS", "parts": 1 },
   "consentimentos": [],
   "transcription_raw": "string completa da transcrição REAL do áudio",
   "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
@@ -229,27 +250,23 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 }
         `;
 
-        // =====================================================================
-        // ======================= REMOÇÃO DO ERRO =========================
-        // =====================================================================
-        // O log provou que o `generationConfig`
-        // não é aceito. Ele foi completamente removido.
-        // =====================================================================
         const requestBody = {
             "contents": [
                 {
                     "parts": [
                         { "text": textPrompt },
                         {
-                            "inlineData": {
+                            "fileData": { // <--- A v1beta aceita fileData
                                 "mimeType": mimeType,
-                                "data": base64Audio
+                                "fileUri": audioUrl
                             }
                         }
                     ]
                 }
-            ]
-            // "generationConfig" REMOVIDO
+            ],
+            "generationConfig": {
+                "response_mime_type": "application/json" // <--- A v1beta aceita snake_case
+            }
         };
 
         const response = await fetch(API_URL, {
@@ -274,17 +291,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         const text = data.candidates[0].content.parts[0].text;
         
         try {
-            // A resposta da API (sem generationConfig) pode vir com
-            // marcadores de markdown (```json ... ```). Vamos limpá-los.
-            let cleanText = text.trim();
-            if (cleanText.startsWith("```json")) {
-                cleanText = cleanText.substring(7); // Remove ```json
-            }
-            if (cleanText.endsWith("```")) {
-                cleanText = cleanText.substring(0, cleanText.length - 3); // Remove ```
-            }
-
-            const resultJson = JSON.parse(cleanText);
+            const resultJson = JSON.parse(text);
             
             if (resultJson.erro) {
                 throw new Error(`IA reportou um erro: ${resultJson.erro}`);
