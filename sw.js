@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kumon-diario-v1';
+const CACHE_NAME = 'kumon-diario-v2'; // <--- ALTERAÇÃO CRÍTICA AQUI
 const urlsToCache = [
     './',
     './index.html',
@@ -32,6 +32,7 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
+            // Deleta caches antigos (como 'kumon-diario-v1')
             return caches.delete(cacheName);
           }
         })
