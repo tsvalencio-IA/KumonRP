@@ -181,7 +181,7 @@ const App = {
             const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioParaProcessar);
 
             // Etapa 2: Chamar o Gemini com a URL do Cloudinary
-            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
+            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Pro)...';
             const analysis = await this.callGeminiForAnalysis(audioUrl, uploadedMimeType, brainData || {});
 
             // Salvar relatório no estado e exibir
@@ -211,12 +211,13 @@ const App = {
         }
 
         // =====================================================================
-        // ================= CORREÇÃO: NOME DO MODELO ========================
+        // ================= CORREÇÃO: MUDANÇA DE MODELO =====================
         // =====================================================================
-        // O log prova que `v1beta` não tem `...-latest`.
-        // A correção final é usar `v1beta` com o nome de modelo `gemini-1.5-flash`.
+        // Nossas tentativas com `gemini-1.5-flash` e `gemini-1.5-flash-latest`
+        // no endpoint `v1beta` falharam (404).
+        // Vamos trocar para o `gemini-1.5-pro-latest` no mesmo endpoint `v1beta`.
         // =====================================================================
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
@@ -480,7 +481,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                     <div class="student-stages">
                         ${student.mathStage ? `<div class="stage-item"><span class="stage-label">Mat</span>${student.mathStage}</div>` : ''}
                         ${student.portStage ? `<div class="stage-item"><span class="stage-label">Port</span>${student.portStage}</div>` : ''}
-                        ${student.engStage ? `<div class="stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
+                        ${student.engStage ? `<div class.stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -743,7 +744,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 break;
         }
         return `
-            <div class-="history-item">
+            <div class="history-item">
                 <div class="history-item-header">
                     <span class="history-date">${date}</span>
                 </div>
