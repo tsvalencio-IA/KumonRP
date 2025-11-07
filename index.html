@@ -61,26 +61,41 @@
 
             <fieldset id="meetingsModule">
                 <legend>Diário de Reuniões de Pais</legend>
+                
                 <div class="form-section">
                     <label for="meetingDate">📅 Data da Reunião</label>
                     <input type="date" id="meetingDate">
                 </div>
+
                 <div class="form-section">
-                    <label for="audioUpload">🎤 Gravar/Enviar Áudio da Reunião</label>
-                    <input type="file" id="audioUpload" accept="audio/*" capture="microphone">
-                    <button id="startRecordingBtn" class="btn">Iniciar Gravação</button>
-                    <div id="recordingStatus" class="hidden">Gravando... <span id="recordingTime">00:00</span></div>
+                    <label for="audioUpload">📤 Enviar Áudio Gravado (Galeria)</label>
+                    <input type="file" id="audioUpload" accept="audio/*">
+                    <p id="audioFileName" class="text-sm text-gray-500 mt-1"></p>
                 </div>
+                
+                <p class="text-center text-gray-500 my-2">-- OU --</p>
+
                 <div class="form-section">
-                    <label for="additionalNotes">📝 Notas Adicionais</label>
+                    <label>🎤 Gravar Áudio Agora</label>
+                    <div class="button-container-vertical">
+                        <button id="startRecordingBtn" class="btn">Iniciar Gravação</button>
+                        <button id="stopRecordingBtn" class="btn btn-danger hidden">Parar Gravação</button>
+                    </div>
+                    <div id="recordingStatus" class="hidden text-center mt-2">Gravando... <span id="recordingTime">00:00</span></div>
+                </div>
+                
+                <hr class="my-4">
+
+                <div class="form-section">
+                    <label for="additionalNotes">📝 Notas Adicionais (Opcional)</label>
                     <textarea id="additionalNotes" rows="3" placeholder="Observações sobre a reunião, decisões tomadas, etc."></textarea>
                 </div>
+                
                 <div class="button-container">
                     <button id="processAudioBtn" class="btn" disabled>🤖 Processar Áudio com IA</button>
                     <button id="viewReportBtn" class="btn">📊 Ver Relatório</button>
                 </div>
             </fieldset>
-
             <fieldset id="studentsModule">
                 <legend>Gestão de Alunos Inteligente</legend>
                 <div class="students-header">
@@ -102,7 +117,7 @@
                     <p>Relatório aparecerá aqui após processamento.</p>
                 </div>
                 <div class="button-container">
-                    <button id="downloadReportBtn" class="btn download-btn">Download Relatório</Lbutton>
+                    <button id="downloadReportBtn" class="btn download-btn">Download Relatório</button>
                 </div>
             </section>
         </main>
@@ -285,5 +300,5 @@
     <script src="js/config.js"></script>
     <script src="js/app.js"></script>
     <script src="js/auth.js"></script>
-    </body>
+</body>
 </html>
