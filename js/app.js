@@ -181,7 +181,7 @@ const App = {
             const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioParaProcessar);
 
             // Etapa 2: Chamar o Gemini com a URL do Cloudinary
-            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Pro)...';
+            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
             const analysis = await this.callGeminiForAnalysis(audioUrl, uploadedMimeType, brainData || {});
 
             // Salvar relatório no estado e exibir
@@ -211,13 +211,22 @@ const App = {
         }
 
         // =====================================================================
-        // ================= CORREÇÃO: MUDANÇA DE MODELO =====================
+        // ================= CORREÇÃO DE ARQUITETURA DE API ====================
         // =====================================================================
-        // Nossas tentativas com `gemini-1.5-flash` e `gemini-1.5-flash-latest`
-        // no endpoint `v1beta` falharam (404).
-        // Vamos trocar para o `gemini-1.5-pro-latest` no mesmo endpoint `v1beta`.
+        // 1. MUDANÇA DE ENDPOINT: Saímos da `generativelanguage.googleapis.com`
+        //    (que estava dando 404) e entramos na `aiplatform.googleapis.com`
+        //    (Vertex AI), que você JÁ TEM ATIVADA.
+        // 2. MUDANÇA DE URL: A URL da Vertex AI requer PROJECT_ID e REGIÃO.
+        //    - PROJECT_ID: `kumon-c63a2`
+        //    - REGIÃO: `us-central1` (Padrão)
+        // 3. MUDANÇA DE MODELO: Usando `gemini-1.5-flash-001` (nome estável na Vertex).
         // =====================================================================
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        
+        const PROJECT_ID = "kumon-c63a2";
+        const REGION = "us-central1";
+        const MODEL_NAME = "gemini-1.5-flash-001"; // Usando o modelo estável da Vertex
+
+        const API_URL = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${MODEL_NAME}:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
@@ -258,9 +267,16 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 }
         `;
 
+        // =====================================================================
+        // ================= CORREÇÃO DE ARQUITETURA DE API ====================
+        // =====================================================================
+        // O body (corpo) da Vertex AI é diferente. Ele usa `role` e
+        // `responseMimeType` (camelCase) está dentro de `generationConfig`.
+        // =====================================================================
         const requestBody = {
             "contents": [
                 {
+                    "role": "USER",
                     "parts": [
                         { "text": textPrompt },
                         {
@@ -273,7 +289,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 }
             ],
             "generationConfig": {
-                "response_mime_type": "application/json" 
+                "responseMimeType": "application/json"
             }
         };
 
@@ -287,13 +303,18 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Erro da API Gemini: ${errorData.error?.message || 'Erro desconhecido'}`);
+            throw new Error(`Erro da API Gemini (Vertex AI): ${errorData.error?.message || 'Erro desconhecido'}`);
         }
 
         const data = await response.json();
         
+        // A resposta da Vertex AI é LIGEIRAMENTE diferente
         if (!data.candidates || !data.candidates[0].content.parts[0].text) {
-             throw new Error('Resposta inesperada da API Gemini. O modelo pode não ter retornado texto.');
+             // O log de erro (400) nos ensinou que a Vertex
+             // pode retornar um erro de JSON inválido se o formato estiver errado.
+             // Se o erro 400 voltar, é porque o `fileData` não é suportado
+             // nem mesmo na Vertex.
+             throw new Error('Resposta inesperada da API Vertex AI. O modelo pode não ter retornado texto.');
         }
 
         const text = data.candidates[0].content.parts[0].text;
@@ -481,7 +502,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                     <div class="student-stages">
                         ${student.mathStage ? `<div class="stage-item"><span class="stage-label">Mat</span>${student.mathStage}</div>` : ''}
                         ${student.portStage ? `<div class="stage-item"><span class="stage-label">Port</span>${student.portStage}</div>` : ''}
-                        ${student.engStage ? `<div class.stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
+                        ${student.engStage ? `<div class="stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
                     </div>
                 </div>
             `).join('');
