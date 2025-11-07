@@ -176,7 +176,6 @@ fieldset:disabled { opacity: 0.7; background-color: #fdfdfd; }
 
 /* Novos estilos para o módulo de reuniões */
 #meetingsModule { margin-top: 20px; }
-#recordingStatus { color: var(--kumon-red); font-weight: bold; margin-top: 10px; }
 .report-content { 
     background: var(--white); border: 1px solid var(--border-color); border-radius: 6px; 
     padding: 20px; font-family: 'Courier New', Courier, monospace; white-space: pre-wrap; 
