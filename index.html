@@ -11,7 +11,6 @@
     <link href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 </head>
 <body id="app-page">
-    <!-- TELA DE LOGIN (inicialmente visível) -->
     <div id="login-screen" class="login-container">
         <h1 class="text-3xl font-bold text-cyan-400 mb-2 text-center">Central de Comando</h1>
         <p class="text-lg font-semibold text-white text-center">Kumon</p>
@@ -29,7 +28,6 @@
         </form>
     </div>
 
-    <!-- TELA PRINCIPAL (inicialmente oculta) -->
     <div id="app-container" class="container hidden">
         <header>
             <div class="header-content">
@@ -51,7 +49,6 @@
         </header>
 
         <main>
-            <!-- NOVO: Seção para atualizar o brain.json -->
             <fieldset id="brainModule">
                 <legend>🧠 Atualizar 'Cérebro' da IA</legend>
                 <div class="form-section">
@@ -96,8 +93,7 @@
                     </div>
                 </div>
                 <div id="student-list" class="student-list">
-                    <!-- Carregado dinamicamente -->
-                </div>
+                    </div>
             </fieldset>
 
             <section id="reportSection" class="section-box hidden">
@@ -283,10 +279,10 @@
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://upload-widget.cloudinary.com/global/all.js" type="text/javascript"></script>  
     
-    <script src="JTS/config.js"></script>
+    <script src="js/config.js"></script>
     <script src="js/app.js"></script>
     <script src="js/auth.js"></script>
 </body>
