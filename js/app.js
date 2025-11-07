@@ -872,8 +872,8 @@ ${'='.repeat(50)}
     promptForReset() {
         const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
         if (code === '*177') {
-            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite '*177' e clique em OK.");
-            if (confirmation === '*177') {
+            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite 'APAGAR TUDO' e clique em OK.");
+            if (confirmation === 'APAGAR TUDO') {
                 this.hardResetUserData();
             } else {
                 alert("Operação de reset cancelada.");
