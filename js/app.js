@@ -31,7 +31,6 @@ const App = {
         this.mapDOMElements();
         this.addEventListeners();
         this.loadStudents();
-        // setupRecording() removido daqui. Será chamado "Just-in-Time".
     },
     mapDOMElements() {
         this.elements = {
@@ -116,7 +115,7 @@ const App = {
     // =====================================================================
     
     async startRecording() {
-        // Pede permissão "Just-in-Time"
+        // Pede permissão "Just-in-Time" (ao clicar)
         let stream;
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -146,8 +145,10 @@ const App = {
             this.state.audioFile = new File([audioBlob], 'gravacao.webm', { type: mimeType }); // Salva o arquivo final
             
             // Limpa o stream e os chunks
-            this.state.recordingStream.getTracks().forEach(track => track.stop());
-            this.state.recordingStream = null;
+            if (this.state.recordingStream) {
+                this.state.recordingStream.getTracks().forEach(track => track.stop());
+                this.state.recordingStream = null;
+            }
             this.state.recordingChunks = [];
             
             this.elements.audioFileName.textContent = `Gravação concluída: gravacao.webm`;
@@ -211,6 +212,11 @@ const App = {
     async uploadAudioToCloudinary(audioBlob) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
+        }
+
+        // Converte blob para File se não for um arquivo (caso da gravação)
+        if (!(audioBlob instanceof File)) {
+            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
         }
 
         const formData = new FormData();
@@ -713,33 +719,52 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.elements.reportHistory.innerHTML = '<p>Nenhum boletim registrado.</p>';
         this.elements.performanceHistory.innerHTML = '<p>Nenhum registro de desempenho.</p>';
     },
+    
+    // =====================================================================
+    // ================ CORREÇÃO: BUG DO HISTÓRICO VAZIO ===================
+    // =====================================================================
     async addHistoryEntry(event, historyType, formElement) {
         event.preventDefault();
         if (!this.state.currentStudentId) {
             alert('É necessário salvar o aluno antes de adicionar registros ao histórico.');
             return;
         }
-        const inputs = formElement.querySelectorAll('input, select, textarea');
-        const entry = { id: Date.now().toString(), createdAt: new Date().toISOString() };
-        let isValid = true;
-        inputs.forEach(input => {
-            if (input.required && !input.value) isValid = false;
-            const key = input.id.replace(/^(programming|report|performance)/, '').charAt(0).toLowerCase() + input.id.slice(1).replace(/^(rogramming|eport|erformance)/, '');
-            if(input.type !== 'file') entry[key] = input.value;
-        });
-        if (!isValid) {
-            alert('Por favor, preencha todos os campos obrigatórios.');
+
+        // Validação Explícita (Corrigindo o bug de validação)
+        if (!formElement.checkValidity()) {
+            formElement.reportValidity(); // Mostra o balão "Preencha este campo"
             return;
         }
-        if (historyType === 'reportHistory') {
-            const fileInput = formElement.querySelector('input[type="file"]');
-            if (fileInput.files.length > 0) {
-                // Upload de anexos para o Cloudinary (que é o banco de arquivos)
-                try { entry.fileurl = await this.uploadFileToCloudinary(fileInput.files[0], 'boletins'); } 
-                catch (error) { console.error('Erro no upload:', error); alert('Erro no upload do arquivo.'); }
+
+        const entry = { id: Date.now().toString(), createdAt: new Date().toISOString() };
+
+        // Leitura Explícita (Corrigindo o bug do 'material' vazio)
+        try {
+            if (historyType === 'programmingHistory') {
+                entry.date = formElement.querySelector('#programmingDate').value;
+                entry.material = formElement.querySelector('#programmingMaterial').value;
+                entry.notes = formElement.querySelector('#programmingNotes').value;
+            } else if (historyType === 'reportHistory') {
+                entry.date = formElement.querySelector('#reportDate').value;
+                entry.subject = formElement.querySelector('#reportSubject').value;
+                entry.grade = formElement.querySelector('#reportGrade').value;
+                
+                const fileInput = formElement.querySelector('#reportFile');
+                if (fileInput.files.length > 0) {
+                    entry.fileurl = await this.uploadFileToCloudinary(fileInput.files[0], 'boletins');
+                }
+            } else if (historyType === 'performanceLog') {
+                entry.date = formElement.querySelector('#performanceDate').value;
+                entry.type = formElement.querySelector('#performanceType').value;
+                entry.details = formElement.querySelector('#performanceDetails').value;
             }
+        } catch (e) {
+            console.error("Erro ao ler dados do formulário:", e);
+            alert("Erro interno ao ler o formulário.");
+            return;
         }
         
+        // Garante que o array de histórico exista no estado local
         if (!this.state.students[this.state.currentStudentId][historyType]) {
             this.state.students[this.state.currentStudentId][historyType] = [];
         }
@@ -747,7 +772,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.state.students[this.state.currentStudentId][historyType].push(entry);
         
         try {
+            // Salva o objeto 'students' inteiro
             await this.setData('alunos', 'lista_alunos', { students: this.state.students });
+            
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
             formElement.reset();
             await this.updateBrainFromStudents();
@@ -757,25 +784,49 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             this.state.students[this.state.currentStudentId][historyType].pop();
         }
     },
+
     renderHistory(historyType, historyData) {
         const container = this.elements[historyType];
         
-        const historyArray = Array.isArray(historyData) ? historyData : Object.values(historyData);
+        const historyArray = Array.isArray(historyData) ? historyData : Object.values(historyData || {});
 
         if (!historyArray || historyArray.length === 0) {
             container.innerHTML = `<p>Nenhum registro encontrado.</p>`;
             return;
         }
         container.innerHTML = historyArray
-            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            // Ordena pela data do evento, caindo para createdAt se a data não existir
+            .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
             .map(entry => this.createHistoryItemHTML(historyType, entry))
             .join('');
     },
+
     createHistoryItemHTML(type, entry) {
         let detailsHTML = '';
-        const entryDate = entry.date || entry.createdAt;
-        const date = entryDate ? new Date(entryDate.startsWith('20') ? entryDate : new Date(entryDate + 'T12:00:00Z')).toLocaleDateString('pt-BR') : 'Data Inválida';
         
+        // =====================================================================
+        // ================== CORREÇÃO: BUG DO FUSO HORÁRIO ==================
+        // =====================================================================
+        // O input 'date' retorna "YYYY-MM-DD".
+        // new Date("YYYY-MM-DD") cria um UTC date (meia-noite), que no fuso -3 (Brasil)
+        // vira dia anterior.
+        // A correção é forçar o parse como se fosse hora local (meio-dia).
+        
+        const entryDateStr = entry.date || entry.createdAt;
+        let date = 'Data Inválida';
+
+        if (entryDateStr) {
+            if (entryDateStr.includes('T')) { // É um ISOString (createdAt)
+                date = new Date(entryDateStr).toLocaleDateString('pt-BR');
+            } else if (entryDateStr.includes('-')) { // É um "YYYY-MM-DD" (entry.date)
+                const parts = entryDateStr.split('-');
+                // Cria a data como meio-dia (local) para evitar problemas de fuso
+                const localDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+                date = localDate.toLocaleDateString('pt-BR');
+            }
+        }
+        // =====================================================================
+
         switch (type) {
             case 'programmingHistory':
                 detailsHTML = `<div class="history-details"><strong>Material:</strong> ${entry.material || ''}</div>${entry.notes ? `<div class="history-details"><strong>Obs:</strong> ${entry.notes}</div>` : ''}`;
@@ -784,25 +835,28 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 detailsHTML = `<div class="history-details"><strong>${entry.subject || ''}:</strong> Nota ${entry.grade || 'N/A'}</div>${entry.fileurl ? `<div class="history-file">📎 <a href="${entry.fileurl}" target="_blank">Ver anexo</a></div>` : ''}`;
                 break;
             case 'performanceLog':
-                detailsHTML = `<div class="history-details">${entry.details || ''}</div>`;
+                detailsHTML = `<div class="history-details"><strong>${entry.type || 'REGISTRO'}:</strong> ${entry.details || ''}</div>`;
                 break;
         }
         return `
             <div class="history-item">
                 <div class="history-item-header">
                     <span class="history-date">${date}</span>
-                    <span class="history-type">${entry.type || 'REGISTRO'}</span>
-                </div>
+                    </div>
                 ${detailsHTML}
                 <button class="delete-history-btn" onclick="App.deleteHistoryEntry('${type}', '${entry.id}')" title="Excluir">&times;</button>
             </div>`;
     },
+    // =====================================================================
+    // ===================== FIM DAS CORREÇÕES DE HISTÓRICO ================
+    // =====================================================================
+
     async deleteHistoryEntry(historyType, entryId) {
         if (!confirm('Tem certeza que deseja excluir este registro do histórico?')) return;
         
         const student = this.state.students[this.state.currentStudentId];
         
-        let historyArray = Array.isArray(student[historyType]) ? student[historyType] : Object.values(student[historyType]);
+        let historyArray = Array.isArray(student[historyType]) ? student[historyType] : Object.values(student[historyType] || {});
         student[historyType] = historyArray.filter(entry => entry.id !== entryId);
         
         try {
@@ -827,6 +881,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         
         const performanceLog = Array.isArray(student.performanceLog) ? student.performanceLog : Object.values(student.performanceLog || {});
         const reportHistory = Array.isArray(student.reportHistory) ? student.reportHistory : Object.values(student.reportHistory || {});
+        const programmingHistory = Array.isArray(student.programmingHistory) ? student.programmingHistory : Object.values(student.programmingHistory || {});
+
         
         let analysis = `ANÁLISE INTELIGENTE - ${student.name}
 ${'='.repeat(50)}
@@ -862,7 +918,7 @@ ${'='.repeat(50)}
         if (repetitions.length >= 3 && lowGrades.length > 0) {
             analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
 `;
-        } else if (!student.programmingHistory || (Array.isArray(student.programmingHistory) && student.programmingHistory.length === 0)) {
+        } else if (programmingHistory.length === 0) {
             analysis += `   O aluno não possui programação registrada. Iniciar a programação de materiais é fundamental para acompanhar o progresso.
 `;
         } else {
@@ -890,8 +946,8 @@ ${'='.repeat(50)}
     promptForReset() {
         const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
         if (code === '*177') {
-            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite '*177' e clique em OK.");
-            if (confirmation === '*177') {
+            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite 'APAGAR TUDO' e clique em OK.");
+            if (confirmation === 'APAGAR TUDO') {
                 this.hardResetUserData();
             } else {
                 alert("Operação de reset cancelada.");
