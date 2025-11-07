@@ -230,10 +230,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         `;
 
         // =====================================================================
-        // ================= CORREÇÃO DO TYPO (snake_case) ===================
+        // ======================= REMOÇÃO DO ERRO =========================
         // =====================================================================
-        // O erro mostrou que "response_mime_type"
-        // estava errado. O endpoint v1 espera "responseMimeType" (camelCase).
+        // O log provou que o `generationConfig`
+        // não é aceito. Ele foi completamente removido.
         // =====================================================================
         const requestBody = {
             "contents": [
@@ -248,10 +248,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                         }
                     ]
                 }
-            ],
-            "generationConfig": {
-                "responseMimeType": "application/json" // <--- CORRIGIDO
-            }
+            ]
+            // "generationConfig" REMOVIDO
         };
 
         const response = await fetch(API_URL, {
@@ -269,6 +267,8 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         const data = await response.json();
         
+        // O código 'JSON.parse(text)' abaixo já lida com a resposta
+        // de texto plano que esperamos agora.
         if (!data.candidates || !data.candidates[0].content.parts[0].text) {
              throw new Error('Resposta inesperada da API Gemini. O modelo pode não ter retornado texto.');
         }
