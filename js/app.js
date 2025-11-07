@@ -6,11 +6,6 @@ const App = {
         db: null, // Agora será uma instância do Realtime Database
         students: {},
         currentStudentId: null,
-        mediaRecorder: null,
-        recordingStream: null, // Armazena o stream para poder pará-lo
-        recordingChunks: [],
-        recordingInterval: null,
-        recordingTime: 0,
         reportData: null,
         audioFile: null // Armazena o áudio (gravado ou enviado)
     },
@@ -42,10 +37,6 @@ const App = {
             meetingDate: document.getElementById('meetingDate'),
             audioUpload: document.getElementById('audioUpload'),
             audioFileName: document.getElementById('audioFileName'), // Novo
-            startRecordingBtn: document.getElementById('startRecordingBtn'),
-            stopRecordingBtn: document.getElementById('stopRecordingBtn'), // Novo
-            recordingStatus: document.getElementById('recordingStatus'),
-            recordingTime: document.getElementById('recordingTime'),
             additionalNotes: document.getElementById('additionalNotes'),
             processAudioBtn: document.getElementById('processAudioBtn'),
             viewReportBtn: document.getElementById('viewReportBtn'),
@@ -87,8 +78,6 @@ const App = {
         
         // Diário de Reuniões (Lógica Refatorada)
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
-        this.elements.startRecordingBtn.addEventListener('click', () => this.startRecording());
-        this.elements.stopRecordingBtn.addEventListener('click', () => this.stopRecording());
         this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI());
         this.elements.viewReportBtn.addEventListener('click', () => this.showReport());
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
@@ -111,88 +100,13 @@ const App = {
     },
     
     // =====================================================================
-    // ================== LÓGICA DE GRAVAÇÃO (JIT) ===================
+    // ================== LÓGICA DE UPLOAD DE ÁUDIO ===================
     // =====================================================================
-    
-    async startRecording() {
-        // Pede permissão "Just-in-Time" (ao clicar)
-        let stream;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.state.recordingStream = stream; // Armazena o stream
-        } catch (err) {
-            console.error('Erro ao acessar microfone:', err);
-            alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
-            return;
-        }
-
-        const options = { mimeType: 'audio/webm;codecs=opus' };
-        if (MediaRecorder.isTypeSupported(options.mimeType)) {
-            this.state.mediaRecorder = new MediaRecorder(stream, options);
-        } else {
-            console.warn('audio/webm;codecs=opus não suportado, usando padrão do navegador.');
-            this.state.mediaRecorder = new MediaRecorder(stream);
-        }
-
-        this.state.mediaRecorder.ondataavailable = event => {
-            this.state.recordingChunks.push(event.data);
-        };
-        
-        // Quando parar, processa os chunks
-        this.state.mediaRecorder.onstop = () => {
-            const mimeType = this.state.mediaRecorder.mimeType;
-            const audioBlob = new Blob(this.state.recordingChunks, { type: mimeType });
-            this.state.audioFile = new File([audioBlob], 'gravacao.webm', { type: mimeType }); // Salva o arquivo final
-            
-            // Limpa o stream e os chunks
-            if (this.state.recordingStream) {
-                this.state.recordingStream.getTracks().forEach(track => track.stop());
-                this.state.recordingStream = null;
-            }
-            this.state.recordingChunks = [];
-            
-            this.elements.audioFileName.textContent = `Gravação concluída: gravacao.webm`;
-            this.elements.processAudioBtn.disabled = false;
-        };
-
-        // INICIAR A GRAVAÇÃO
-        this.state.recordingChunks = [];
-        this.state.audioFile = null; // Limpa áudio anterior
-        this.elements.audioUpload.value = null; // Limpa upload anterior
-        this.elements.audioFileName.textContent = '';
-        this.state.recordingTime = 0;
-        this.elements.recordingTime.textContent = '00:00';
-        
-        this.state.mediaRecorder.start();
-        
-        this.elements.recordingStatus.classList.remove('hidden');
-        this.elements.startRecordingBtn.classList.add('hidden');
-        this.elements.stopRecordingBtn.classList.remove('hidden');
-        this.elements.processAudioBtn.disabled = true;
-
-        this.state.recordingInterval = setInterval(() => {
-            this.state.recordingTime++;
-            const minutes = Math.floor(this.state.recordingTime / 60).toString().padStart(2, '0');
-            const seconds = (this.state.recordingTime % 60).toString().padStart(2, '0');
-            this.elements.recordingTime.textContent = `${minutes}:${seconds}`;
-        }, 1000);
-    },
-
-    stopRecording() {
-        if (this.state.mediaRecorder && this.state.mediaRecorder.state === 'recording') {
-            this.state.mediaRecorder.stop();
-        }
-        clearInterval(this.state.recordingInterval);
-        this.elements.recordingStatus.classList.add('hidden');
-        this.elements.startRecordingBtn.classList.remove('hidden');
-        this.elements.stopRecordingBtn.classList.add('hidden');
-    },
 
     handleFileUpload() {
         const file = this.elements.audioUpload.files[0];
         if (file) {
             this.state.audioFile = file; // Salva o arquivo do upload
-            this.state.recordingChunks = []; // Limpa gravação anterior
             this.elements.audioFileName.textContent = `Arquivo selecionado: ${file.name}`;
             this.elements.processAudioBtn.disabled = false;
         } else {
@@ -298,9 +212,10 @@ const App = {
         // =====================================================================
         // ================= CORREÇÃO: NOME DO MODELO DA API ===================
         // =====================================================================
-        // O erro "models/gemini-1.5-flash is not found" é porque o nome
-        // correto na API pública é "gemini-1.5-flash-latest".
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        // O erro "models/gemini-1.5-flash-latest is not found for API version v1beta"
+        // indica que o sufixo "-latest" não é compatível com a API "v1beta".
+        // A correção é usar o nome do modelo "gemini-1.5-flash".
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
         // =====================================================================
 
         // =====================================================================
