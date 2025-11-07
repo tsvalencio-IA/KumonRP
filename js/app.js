@@ -1,5 +1,5 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
-// REFATORADO PARA USAR O REALTIME DATABASE
+// REFATORADO PARA USAR O REALTIME DATABASE E IA MULTIMODAL REAL
 const App = {
     state: {
         userId: null,
@@ -17,7 +17,6 @@ const App = {
     // ======================== INICIALIZAÇÃO E SETUP ======================
     // =====================================================================
     init(user, databaseInstance) {
-        // CORREÇÃO: A imagem de erro mostra que 'loading-overlay' não existe.
         const loginScreen = document.getElementById('login-screen');
         if (loginScreen) {
             loginScreen.classList.add('hidden');
@@ -103,12 +102,22 @@ const App = {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
-                    this.state.mediaRecorder = new MediaRecorder(stream);
+                    // Tenta usar um formato mais compatível se possível, como webm
+                    const options = { mimeType: 'audio/webm;codecs=opus' };
+                    if (MediaRecorder.isTypeSupported(options.mimeType)) {
+                        this.state.mediaRecorder = new MediaRecorder(stream, options);
+                    } else {
+                        console.warn('audio/webm;codecs=opus não suportado, usando padrão do navegador.');
+                        this.state.mediaRecorder = new MediaRecorder(stream);
+                    }
+                    
                     this.state.mediaRecorder.ondataavailable = event => {
                         this.state.recordingChunks.push(event.data);
                     };
                     this.state.mediaRecorder.onstop = () => {
                         stream.getTracks().forEach(track => track.stop());
+                        // Re-habilita o setup para a próxima gravação
+                        this.setupRecording();
                     };
                 })
                 .catch(err => {
@@ -119,20 +128,42 @@ const App = {
             alert('Seu navegador não suporta gravação de áudio.');
         }
     },
+    
+    // =====================================================================
+    // ================== CORREÇÃO: LÓGICA DE GRAVAÇÃO ===================
+    // =====================================================================
     toggleRecording() {
-        if (!this.state.mediaRecorder) return;
+        if (!this.state.mediaRecorder) {
+            alert('Recursos de gravação não estão prontos. Tentando inicializar...');
+            this.setupRecording();
+            return;
+        }
+
+        const btn = this.elements.startRecordingBtn;
 
         if (this.state.mediaRecorder.state === 'recording') {
+            // PARAR A GRAVAÇÃO
             this.state.mediaRecorder.stop();
             clearInterval(this.state.recordingInterval);
             this.elements.recordingStatus.classList.add('hidden');
             this.elements.processAudioBtn.disabled = false;
+            
+            btn.textContent = 'Iniciar Gravação';
+            btn.classList.remove('btn-danger'); // Remove a cor vermelha
+
         } else {
+            // INICIAR A GRAVAÇÃO
             this.state.recordingChunks = [];
             this.state.recordingTime = 0;
+            this.elements.recordingTime.textContent = '00:00';
             this.state.mediaRecorder.start();
+            
             this.elements.recordingStatus.classList.remove('hidden');
             this.elements.processAudioBtn.disabled = true;
+            
+            btn.textContent = 'Parar Gravação';
+            btn.classList.add('btn-danger'); // Adiciona uma cor vermelha (definida no CSS)
+
             this.state.recordingInterval = setInterval(() => {
                 this.state.recordingTime++;
                 const minutes = Math.floor(this.state.recordingTime / 60).toString().padStart(2, '0');
@@ -147,43 +178,67 @@ const App = {
             this.elements.processAudioBtn.disabled = false;
         }
     },
+
+    // =====================================================================
+    // ================== CORREÇÃO: ARQUITETURA DE IA REAL =================
+    // =====================================================================
+
+    /**
+     * Converte um Blob de áudio para uma string Base64
+     */
+    blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = () => {
+                // Remove o prefixo "data:audio/webm;base64,"
+                const base64Data = reader.result.split(',')[1];
+                resolve(base64Data);
+            };
+            reader.onerror = (error) => {
+                reject(error);
+            };
+        });
+    },
+
     async processAudioWithAI() {
-        this.elements.reportContent.textContent = 'Processando áudio com IA...';
+        this.elements.reportContent.textContent = 'Processando áudio com IA... Esta operação pode levar alguns segundos.';
+        this.elements.reportContent.style.color = 'inherit'; // Reseta a cor
         this.elements.reportSection.classList.remove('hidden');
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
 
+        let audioBlob = null;
+        let mimeType = '';
+
         try {
-            // ALERTA DE ERRO DE DESIGN:
-            // A função callGeminiForAnalysis abaixo está quebrada.
-            // Ela envia uma URL para a API do Gemini, mas a API não pode processar áudio de URLs.
-            // Esta função precisa ser reescrita para usar uma API de Speech-to-Text PRIMEIRO.
-            // O código abaixo irá falhar na etapa callGeminiForAnalysis.
-            alert("ERRO DE DESIGN: A função 'callGeminiForAnalysis' não é funcional. A API do Gemini não pode ler áudio de uma URL. Verifique o console para mais detalhes e a nota no código-fonte.");
-            console.error("ERRO DE DESIGN: A função 'callGeminiForAnalysis' está quebrada. Ela envia uma URL para a API do Gemini, mas a API não pode processar áudio de URLs. Você deve usar uma API de Speech-to-Text primeiro e depois enviar a transcrição para o Gemini.");
-
-
             const audioFile = this.elements.audioUpload.files[0];
-            let audioBlob = audioFile;
 
-            if (!audioFile && this.state.mediaRecorder && this.state.recordingChunks.length > 0) {
-                audioBlob = new Blob(this.state.recordingChunks, { type: 'audio/webm' });
+            if (audioFile) {
+                // Caso 1: Usuário enviou um arquivo
+                audioBlob = audioFile;
+                mimeType = audioFile.type;
+            } else if (this.state.recordingChunks.length > 0) {
+                // Caso 2: Usuário gravou um áudio
+                // O mimeType é definido no setupRecording()
+                mimeType = this.state.mediaRecorder.mimeType;
+                audioBlob = new Blob(this.state.recordingChunks, { type: mimeType });
+            } else {
+                throw new Error('Nenhum áudio encontrado. Grave ou envie um arquivo primeiro.');
             }
 
-            if (!audioBlob) {
-                throw new Error('Nenhum áudio encontrado para processar.');
-            }
-
-            // Obter brain.json do Firebase (ATUALIZADO)
+            // Obter brain.json do Firebase (Contexto)
             const brainData = await this.fetchBrainData();
             if (!brainData) {
                 throw new Error('Dados do "brain.json" não encontrados no Firebase. O modelo não pode operar sem o contexto dos alunos.');
             }
 
-            // Upload para Cloudinary
-            const cloudinaryUrl = await this.uploadAudioToCloudinary(audioBlob);
+            // Converter o áudio para Base64 para envio direto ao Gemini
+            this.elements.reportContent.textContent = 'Convertendo áudio para Base64...';
+            const audioBase64 = await this.blobToBase64(audioBlob);
 
-            // Obter transcrição e análise do Gemini
-            const analysis = await this.callGeminiForAnalysis(cloudinaryUrl, brainData);
+            // Chamar o Gemini com o áudio real e o contexto
+            this.elements.reportContent.textContent = 'Enviando áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
+            const analysis = await this.callGeminiForAnalysis(audioBase64, mimeType, brainData);
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -192,79 +247,48 @@ const App = {
         } catch (error) {
             console.error('Erro ao processar áudio:', error);
             this.elements.reportContent.textContent = `Erro ao processar áudio: ${error.message}`;
+            this.elements.reportContent.style.color = 'red';
         }
     },
-    async uploadAudioToCloudinary(audioBlob) {
-        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
-        }
 
-        // Converter blob para File se necessário
-        if (!(audioBlob instanceof File)) {
-            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: 'audio/webm' });
-        }
-
-        const formData = new FormData();
-        formData.append('file', audioBlob);
-        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
-        formData.append('folder', `${this.state.userId}/reunioes`);
-        formData.append('resource_type', 'raw');
-
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
-        }
-
-        const result = await response.json();
-        return result.secure_url;
-    },
-    async callGeminiForAnalysis(audioUrl, brainData) {
+    /**
+     * Chama a API multimodal do Gemini (1.5 Flash) enviando o áudio como Base64.
+     */
+    async callGeminiForAnalysis(audioBase64, mimeType, brainData) {
         if (!window.GEMINI_API_KEY) {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
 
-        // ALERTA DE ERRO DE DESIGN:
-        // O prompt abaixo tenta fazer a API Gemini processar um áudio a partir de uma URL (${audioUrl}).
-        // A API generativelanguage.googleapis.com NÃO FAZ ISSO.
-        // Esta chamada irá falhar ou retornar uma resposta de texto que ignora o áudio.
-        // O correto seria usar uma API de Speech-to-Text ou uma API multimodal (como a File API do Gemini)
-        // enviando os *dados* do áudio, não uma URL.
-        console.error("callGeminiForAnalysis: Esta função está enviando uma URL para uma API de texto. Isso não vai funcionar.");
+        // CORREÇÃO: O modelo 'gemini-2.5-flash' não existe. Corrigido para 'gemini-1.5-flash'.
+        // Usando a API v1beta, que suporta dados multimodais (áudio).
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
 
-        // Preparar prompt para o Gemini
-        const prompt = `
-Você é um assistente especializado em processar áudios de reuniões de pais do Método Kumon. Sua tarefa é gerar um relatório estruturado em JSON com base no áudio fornecido e nos dados do "brain.json" que contém informações sobre os alunos.
+        // O prompt de texto é enviado junto com o áudio
+        const textPrompt = `
+Você é um assistente especializado em processar áudios de reuniões de pais do Método Kumon. Sua tarefa é gerar um relatório estruturado em JSON com base no ÁUDIO EM ANEXO e nos dados de contexto do "brain.json".
 
 O áudio foi gravado em uma reunião de pais. Siga rigorosamente as diretrizes abaixo:
 
-1. **NÃO INVENTE DADOS**: Toda afirmação sobre um aluno deve derivar explicitamente do áudio ou do "brain.json". Se algo não estiver no áudio ou no "brain.json", avise que não há dados e peça confirmação humana.
-2. **Fuzzy Matching**: Identifique menções a alunos usando fuzzy matching com os nomes no "brain.json".
-3. **Transcrição & Diarização**: Transcreva em português BR, segmentando por falante.
-4. **Resumo Executivo**: Cada frase deve indicar a fonte (ex: "baseado em brain.json.alunos.aluno_1.historico").
-5. **Requer Validação Humana**: Se houver ambiguidades ou dados insuficientes, marque "requer_validacao_humana: true".
-6. **Confiança**: Inclua "confidence" (0.0-1.0) para cada inferência. Se < 0.7, marque "requer_validacao_humana".
+1. **TRANSCREVA O ÁUDIO**: Primeiro, transcreva o áudio em português BR, segmentando por falante.
+2. **NÃO INVENTE DADOS**: Toda afirmação sobre um aluno deve derivar explicitamente do áudio transcrito ou do "brain.json".
+3. **Fuzzy Matching**: Identifique menções a alunos no áudio usando fuzzy matching com os nomes no "brain.json".
+4. **Validação Humana**: Se houver ambiguidades, marque "requer_validacao_humana: true".
+5. **Confiança**: Inclua "confidence" (0.0-1.0) para cada inferência.
 
-O "brain.json" contém os seguintes alunos e informações (use para fuzzy matching e contexto):
+O "brain.json" (contexto) contém os seguintes alunos:
 ${JSON.stringify(brainData, null, 2)}
 
-Processar o áudio em: ${audioUrl}
-
-Gere um JSON com os seguintes campos exatos:
+Gere um JSON com os seguintes campos exatos, baseado NO ÁUDIO e no "brain.json":
 {
   "meta": {
-    "created_at": "ISO_DATE",
-    "sala_id": "ID_DA_SALA",
-    "audio_url": "URL_DO_AUDIO",
-    "duration_s": "DURAÇÃO_EM_SEGUNDOS",
+    "created_at": "${new Date().toISOString()}",
+    "sala_id": "REUNIAO_LOCAL",
+    "audio_url": null,
+    "duration_s": "REAL_DURATION_IN_SECONDS",
     "parts": 1
   },
   "consentimentos": [],
-  "transcription_raw": "string completa",
+  "transcription_raw": "string completa da transcrição do áudio",
   "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
   "mentions_alunos": [{"aluno_id": "string", "nome": "string", "context": "string", "confidence": "number"}],
   "resumo_executivo": "string",
@@ -273,24 +297,39 @@ Gere um JSON com os seguintes campos exatos:
   "dores_familia": [{"familia_nome": "string", "dor_texto": "string", "evidencia_texto": "string", "confidence": "number"}],
   "dores_unidade": [{"dor_texto": "string", "impacto": "string", "evidencia": "string"}],
   "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string", "evidencia": "string"}],
-  "audit_log": [{"action": "string", "by": "model|user", "timestamp": "ISO_DATE", "details": "string"}],
-  "requer_validacao_humana": true|false,
-  "sources": ["string"]
+  "audit_log": [{"action": "string", "by": "model|user", "timestamp": "${new Date().toISOString()}", "details": "string"}],
+  "requer_validacao_humana": true,
+  "sources": ["brain.json", "audio_input"]
 }
         `;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${window.GEMINI_API_KEY}`, {
+        // CORREÇÃO: Corpo da requisição formatado para multimodal (texto + áudio)
+        const requestBody = {
+            "contents": [
+                {
+                    "parts": [
+                        { "text": textPrompt },
+                        {
+                            "inlineData": {
+                                "mimeType": mimeType,
+                                "data": audioBase64
+                            }
+                        }
+                    ]
+                }
+            ],
+            // Configuração para garantir que a saída seja JSON
+            "generationConfig": {
+                "responseMimeType": "application/json"
+            }
+        };
+
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: prompt
-                    }]
-                }]
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
@@ -304,22 +343,20 @@ Gere um JSON com os seguintes campos exatos:
         if (!text) {
             throw new Error('Gemini não retornou um texto válido.');
         }
-
-        // Extrair JSON do retorno
-        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-        let jsonStr = text;
-        if (jsonMatch) {
-            jsonStr = jsonMatch[1];
-        }
-
+        
+        // Como solicitamos JSON, o 'text' deve ser a string JSON
         try {
-            return JSON.parse(jsonStr);
+            return JSON.parse(text);
         } catch (e) {
             console.error('Erro ao parsear JSON do Gemini:', e);
-            console.error('Texto retornado:', text);
+            console.error('Texto retornado (esperava JSON):', text);
             throw new Error('O modelo retornou um JSON inválido. Verifique o console para mais detalhes.');
         }
     },
+    // =====================================================================
+    // ====================== FIM DAS CORREÇÕES DE IA ======================
+    // =====================================================================
+
     renderReport(reportData) {
         this.elements.reportContent.textContent = JSON.stringify(reportData, null, 2);
     },
@@ -711,6 +748,7 @@ Gere um JSON com os seguintes campos exatos:
         if (historyType === 'reportHistory') {
             const fileInput = formElement.querySelector('input[type="file"]');
             if (fileInput.files.length > 0) {
+                // Upload de anexos para o Cloudinary (que é o banco de arquivos)
                 try { entry.fileurl = await this.uploadFileToCloudinary(fileInput.files[0], 'boletins'); } 
                 catch (error) { console.error('Erro no upload:', error); alert('Erro no upload do arquivo.'); }
             }
@@ -861,6 +899,7 @@ ${'='.repeat(50)}
 Última atualização: ${new Date().toLocaleString('pt-BR')}`;
         analysisContent.textContent = analysis;
     },
+    // O upload para o Cloudinary AINDA É USADO para anexos de boletins.
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js');
