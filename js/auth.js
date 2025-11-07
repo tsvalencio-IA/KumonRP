@@ -32,12 +32,22 @@ document.addEventListener('DOMContentLoaded', () => {
             // Usuário logado: esconde a tela de login e mostra a principal
             loginScreen.classList.add('hidden');
             appContainer.classList.remove('hidden');
+            
             // Inicia a aplicação
             if (typeof App !== "undefined" && App.init) {
-                App.init(user, firebase.firestore());
+                
+                // =================================================================
+                // ===================== CORREÇÃO DE ARQUITETURA ===================
+                // =================================================================
+                // Alterado de firebase.firestore() para firebase.database()
+                // para usar o REALTIME DATABASE como você solicitou.
+                App.init(user, firebase.database());
+                // =================================================================
+
             } else {
                 console.error("Objeto 'App' não definido. Verifique a ordem de carregamento dos scripts no index.html.");
-                document.getElementById('loading-overlay').innerHTML = '<p style="color:red;">Erro fatal na aplicação. Verifique a consola.</p>';
+                // CORREÇÃO: A imagem mostra que 'loading-overlay' não existe.
+                // Removida a referência ao 'loading-overlay'.
             }
         } else {
             // Usuário não logado: mostra a tela de login
