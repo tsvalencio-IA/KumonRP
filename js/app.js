@@ -497,7 +497,12 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             this.elements.studentList.innerHTML = `<div class="empty-state"><p>📚 ${searchTerm ? 'Nenhum aluno encontrado.' : 'Nenhum aluno cadastrado.'}</p><p>Clique em "Adicionar Novo Aluno" para começar!</p></div>`;
             return;
         }
-        this.elements.studentList.innerHTML = filteredSstudents
+
+        // =====================================================================
+        // ======================= CORREÇÃO DO TYPO ==========================
+        // =====================================================================
+        // Alterado de 'filteredSstudents' para 'filteredStudents'
+        this.elements.studentList.innerHTML = filteredStudents
             .sort(([, a], [, b]) => a.name.localeCompare(b.name))
             .map(([id, student]) => `
                 <div class="student-card" onclick="App.openStudentModal('${id}')">
@@ -763,22 +768,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             }
         }
        
-        // =====================================================================
-        // ================== CORREÇÃO: BUG DOS DADOS DE HISTÓRICO =============
-        // =====================================================================
-        // O JSON mostrou que os dados do aluno "Thiago" foram salvos
-        // com chaves incorretas (dDate, mMaterial, nNotes).
-        // Isso foi um bug no HTML (index.html) que já foi corrigido
-        // na versão anterior que enviei (que usava 'programmingDate', 'programmingMaterial').
-        // O código de renderização abaixo (createHistoryItemHTML) já
-        // espera as chaves corretas ('material', 'notes').
-        // O código de salvamento (addHistoryEntry) também usa as chaves corretas.
-        // O aluno "Pedro" já foi salvo com as chaves corretas.
-        // Portanto, nenhuma correção é necessária aqui, apenas a observação
-        // de que os dados antigos do "Thiago" não serão exibidos corretamente
-        // até que sejam re-salvos.
-        // =====================================================================
-
         switch (type) {
             case 'programmingHistory':
                 detailsHTML = `<div class="history-details"><strong>Material:</strong> ${entry.material || ''}</div>${entry.notes ? `<div class="history-details"><strong>Obs:</strong> ${entry.notes}</div>` : ''}`;
