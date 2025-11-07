@@ -1,5 +1,5 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
-// REFATORADO PARA USAR O REALTIME DATABASE E IA MULTIMODAL REAL
+// REFATORADO PARA USAR O REALTIME DATABASE E IA REAL (VIA CLOUDINARY URL)
 const App = {
     state: {
         userId: null,
@@ -102,7 +102,6 @@ const App = {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
-                    // Tenta usar um formato mais compatível se possível, como webm
                     const options = { mimeType: 'audio/webm;codecs=opus' };
                     if (MediaRecorder.isTypeSupported(options.mimeType)) {
                         this.state.mediaRecorder = new MediaRecorder(stream, options);
@@ -116,8 +115,7 @@ const App = {
                     };
                     this.state.mediaRecorder.onstop = () => {
                         stream.getTracks().forEach(track => track.stop());
-                        // Re-habilita o setup para a próxima gravação
-                        this.setupRecording();
+                        this.setupRecording(); // Re-habilita para a próxima gravação
                     };
                 })
                 .catch(err => {
@@ -162,7 +160,7 @@ const App = {
             this.elements.processAudioBtn.disabled = true;
             
             btn.textContent = 'Parar Gravação';
-            btn.classList.add('btn-danger'); // Adiciona uma cor vermelha (definida no CSS)
+            btn.classList.add('btn-danger'); // Adiciona uma cor vermelha
 
             this.state.recordingInterval = setInterval(() => {
                 this.state.recordingTime++;
@@ -184,25 +182,47 @@ const App = {
     // =====================================================================
 
     /**
-     * Converte um Blob de áudio para uma string Base64
+     * Função para fazer upload de ÁUDIO para o Cloudinary.
+     * Áudio é tratado como 'raw' ou 'video' (para transcrição nativa, se aplicável)
      */
-    blobToBase64(blob) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = () => {
-                // Remove o prefixo "data:audio/webm;base64,"
-                const base64Data = reader.result.split(',')[1];
-                resolve(base64Data);
-            };
-            reader.onerror = (error) => {
-                reject(error);
-            };
+    async uploadAudioToCloudinary(audioBlob) {
+        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
+            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
+        }
+
+        // Converte blob para File se não for um arquivo (caso da gravação)
+        if (!(audioBlob instanceof File)) {
+            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
+        }
+
+        const formData = new FormData();
+        formData.append('file', audioBlob);
+        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
+        formData.append('folder', `${this.state.userId}/reunioes`);
+        
+        // Usar 'raw' permite que o Gemini busque o arquivo
+        formData.append('resource_type', 'raw');
+
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
+            method: 'POST',
+            body: formData
         });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
+        }
+
+        const result = await response.json();
+        // Retorna a URL e o mime-type original para o Gemini
+        return {
+            url: result.secure_url,
+            mimeType: audioBlob.type
+        };
     },
 
     async processAudioWithAI() {
-        this.elements.reportContent.textContent = 'Processando áudio com IA... Esta operação pode levar alguns segundos.';
+        this.elements.reportContent.textContent = 'Processando áudio com IA...';
         this.elements.reportContent.style.color = 'inherit'; // Reseta a cor
         this.elements.reportSection.classList.remove('hidden');
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
@@ -214,12 +234,11 @@ const App = {
             const audioFile = this.elements.audioUpload.files[0];
 
             if (audioFile) {
-                // Caso 1: Usuário enviou um arquivo
+                // Caso 1: Usuário enviou um arquivo (Galeria do Celular)
                 audioBlob = audioFile;
                 mimeType = audioFile.type;
             } else if (this.state.recordingChunks.length > 0) {
                 // Caso 2: Usuário gravou um áudio
-                // O mimeType é definido no setupRecording()
                 mimeType = this.state.mediaRecorder.mimeType;
                 audioBlob = new Blob(this.state.recordingChunks, { type: mimeType });
             } else {
@@ -228,18 +247,14 @@ const App = {
 
             // Obter brain.json do Firebase (Contexto)
             const brainData = await this.fetchBrainData();
-            if (!brainData) {
-                // Não é um erro fatal, mas a IA terá menos contexto
-                console.warn('Dados do "brain.json" não encontrados. A IA processará o áudio sem contexto de alunos.');
-            }
 
-            // Converter o áudio para Base64 para envio direto ao Gemini
-            this.elements.reportContent.textContent = 'Convertendo áudio para Base64...';
-            const audioBase64 = await this.blobToBase64(audioBlob);
+            // Etapa 1: Enviar para o Cloudinary
+            this.elements.reportContent.textContent = 'Enviando áudio para o Cloudinary (banco de arquivos)...';
+            const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioBlob);
 
-            // Chamar o Gemini com o áudio real e o contexto
-            this.elements.reportContent.textContent = 'Enviando áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
-            const analysis = await this.callGeminiForAnalysis(audioBase64, mimeType, brainData || {}); // Passa objeto vazio se brainData for nulo
+            // Etapa 2: Chamar o Gemini com a URL do Cloudinary
+            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
+            const analysis = await this.callGeminiForAnalysis(audioUrl, uploadedMimeType, brainData || {});
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -253,27 +268,24 @@ const App = {
     },
 
     /**
-     * Chama a API multimodal do Gemini (1.5 Flash) enviando o áudio como Base64.
+     * Chama a API multimodal do Gemini (1.5 Flash) enviando a URL do áudio.
      */
-    async callGeminiForAnalysis(audioBase64, mimeType, brainData) {
+    async callGeminiForAnalysis(audioUrl, mimeType, brainData) {
         if (!window.GEMINI_API_KEY) {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
 
-        // CORREÇÃO: O modelo 'gemini-2.5-flash' não existe. Corrigido para 'gemini-1.5-flash'.
-        // Usando a API v1beta, que suporta dados multimodais (áudio).
+        // Usando a API v1beta (gemini-1.5-flash)
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
 
         // =====================================================================
         // ================ CORREÇÃO: PROMPT ANTI-ALUCINAÇÃO ===================
         // =====================================================================
-        // Este prompt é mais rigoroso. Ele força a IA a admitir se o áudio
-        // estiver silencioso, em vez de inventar uma transcrição.
         const textPrompt = `
-Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO em anexo e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
+Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
 REGRAS RÍGIDAS (NÃO QUEBRE):
-1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
+1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio na URL fornecida. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
 2.  **NÃO INVENTE TRANSCRIÇÃO**: Se o áudio for silencioso, NÃO gere uma transcrição baseada no contexto. A transcrição DEVE vir 100% do áudio.
 3.  **USE O CONTEXTO**: Após transcrever, use o "brain.json" para identificar alunos (fuzzy match) e preencher o resto do relatório.
 4.  **SEJA FIEL AOS FATOS**: O resumo executivo e as dores DEVEM ser baseados no que foi dito no áudio. Use o "brain.json" apenas para confirmar dados (como ID do aluno ou estágio).
@@ -281,14 +293,14 @@ REGRAS RÍGIDAS (NÃO QUEBRE):
 CONTEXTO (brain.json):
 ${JSON.stringify(brainData, null, 2)}
 
-PROCESSE O ÁUDIO ANEXO e retorne APENAS o JSON.
+PROCESSE O ÁUDIO (na URL) e retorne APENAS o JSON.
 
 FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 {
   "meta": {
     "created_at": "${new Date().toISOString()}",
     "sala_id": "REUNIAO_LOCAL",
-    "audio_url": null,
+    "audio_url": "${audioUrl}",
     "duration_s": "REAL_DURATION_IN_SECONDS",
     "parts": 1
   },
@@ -308,16 +320,16 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 }
         `;
 
-        // CORREÇÃO: Corpo da requisição formatado para multimodal (texto + áudio)
+        // CORREÇÃO: Corpo da requisição formatado para multimodal (texto + URL de áudio)
         const requestBody = {
             "contents": [
                 {
                     "parts": [
                         { "text": textPrompt },
                         {
-                            "inlineData": {
+                            "fileData": {
                                 "mimeType": mimeType,
-                                "data": audioBase64
+                                "fileUri": audioUrl
                             }
                         }
                     ]
@@ -350,11 +362,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         const text = data.candidates[0].content.parts[0].text;
         
-        // Como solicitamos JSON, o 'text' deve ser a string JSON
         try {
             const resultJson = JSON.parse(text);
             
-            // VERIFICAÇÃO DE SIMULAÇÃO: Checa se a IA obedeceu a regra de áudio silencioso
+            // VERIFICAÇÃO DE SIMULAÇÃO
             if (resultJson.erro) {
                 throw new Error(`IA reportou um erro: ${resultJson.erro}`);
             }
@@ -364,7 +375,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         } catch (e) {
             console.error('Erro ao parsear JSON do Gemini ou erro reportado pela IA:', e.message);
             console.error('Texto retornado (esperava JSON):', text);
-            // Se o JSON.parse falhar, mas a IA reportou um erro (que não é JSON), mostramos
             if (e.message.includes("IA reportou um erro:")) {
                 throw e;
             }
@@ -410,22 +420,11 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     // ===================== REFATORADO PARA REALTIME DB ===================
     // =====================================================================
     
-    /**
-     * Retorna uma referência do Realtime Database para um caminho específico.
-     * O caminho é 'gestores/{userId}/{collectionName}/{docId}'
-     */
     getDocRef(collectionName, docId) {
         if (!this.state.userId) return null;
-        // A estrutura de dados antiga (Firestore) era:
-        // gestores/{userId}/alunos/lista_alunos
-        // gestores/{userId}/gestores/brain
-        // Vamos replicar isso no Realtime Database:
         return this.state.db.ref(`gestores/${this.state.userId}/${collectionName}/${docId}`);
     },
 
-    /**
-     * Busca dados de um caminho no Realtime Database.
-     */
     async fetchData(collectionName, docId) {
         const docRef = this.getDocRef(collectionName, docId);
         if (!docRef) return null;
@@ -433,21 +432,11 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         return snapshot.exists() ? snapshot.val() : null;
     },
 
-    /**
-     * Salva dados em um caminho no Realtime Database.
-     * ATENÇÃO: Realtime DB não tem 'merge'. A IA anterior usava { merge: true }.
-     * A função 'update' é o equivalente mais próximo de 'merge'.
-     * A função 'set' sobrescreve tudo no nó.
-     * Vamos usar 'update' para preservar dados não listados.
-     */
     async saveData(collectionName, docId, data) {
         const docRef = this.getDocRef(collectionName, docId);
-        if (docRef) await docRef.update(data); // Usando 'update' em vez de 'set' para simular { merge: true }
+        if (docRef) await docRef.update(data); 
     },
 
-    /**
-     * Salva dados usando 'set' (sobrescreve completo).
-     */
     async setData(collectionName, docId, data) {
         const docRef = this.getDocRef(collectionName, docId);
         if (docRef) await docRef.set(data);
@@ -459,7 +448,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     // =====================================================================
     
     async fetchBrainData() {
-        // O caminho agora é 'gestores/{userId}/gestores/brain'
         const brainData = await this.fetchData('gestores', 'brain');
         if (brainData && brainData.brain) {
             return brainData.brain;
@@ -470,8 +458,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
     
     async saveBrainData(brainData) {
-        // Salva o objeto 'brainData' no nó 'brain'
-        // A estrutura será: gestores/{userId}/gestores/brain: { brain: {...} }
         await this.setData('gestores', 'brain', { brain: brainData });
     },
     
@@ -497,18 +483,11 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 throw new Error('O arquivo selecionado não é um JSON válido.');
             }
 
-            // Busca o brain.json atual no Firebase
             let currentBrainData = await this.fetchBrainData();
-
-            // Mescla os dados do arquivo enviado com os dados atuais
             const mergedBrainData = this.deepMerge(currentBrainData, newBrainData);
-
-            // Salva o brain.json mesclado de volta no Firebase
             await this.saveBrainData(mergedBrainData);
 
             alert('Arquivo JSON enviado e "brain.json" atualizado com sucesso no Firebase!');
-
-            // Limpa o campo de upload
             fileInput.value = '';
 
         } catch (error) {
@@ -517,7 +496,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
     },
     deepMerge(target, source) {
-        // Função auxiliar para mesclar objetos de forma profunda
         const output = { ...target };
         if (this.isObject(target) && this.isObject(source)) {
             Object.keys(source).forEach(key => {
@@ -543,14 +521,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     // =====================================================================
     async loadStudents() {
         try {
-            // Busca o nó 'lista_alunos' em 'gestores/{userId}/alunos/lista_alunos'
             const data = await this.fetchData('alunos', 'lista_alunos');
             this.state.students = (data && data.students) ? data.students : {};
             this.renderStudentList();
-            
-            // Bug de apagar dados do 'brain' ao carregar foi corrigido
-            // na minha primeira análise e permanece corrigido aqui.
-
         } catch (error) {
             console.error('Erro ao carregar alunos:', error);
             alert('Não foi possível carregar os dados dos alunos.');
@@ -559,7 +532,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     renderStudentList() {
         const searchTerm = this.elements.studentSearch.value.toLowerCase();
         
-        // O state.students do Realtime DB pode vir como um objeto
         const filteredStudents = Object.entries(this.state.students).filter(([id, student]) =>
             (student.name && student.name.toLowerCase().includes(searchTerm)) ||
             (student.responsible && student.responsible.toLowerCase().includes(searchTerm))
@@ -579,7 +551,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                             <p class="student-responsible">Responsável: ${student.responsible}</p>
                         </div>
                     </div>
-                    <div class.="student-stages">
+                    <div class="student-stages">
                         ${student.mathStage ? `<div class="stage-item"><span class="stage-label">Mat</span>${student.mathStage}</div>` : ''}
                         ${student.portStage ? `<div class="stage-item"><span class="stage-label">Port</span>${student.portStage}</div>` : ''}
                         ${student.engStage ? `<div class="stage-item"><span class="stage-label">Ing</span>${student.engStage}</div>` : ''}
@@ -590,7 +562,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     openStudentModal(studentId = null) {
         this.state.currentStudentId = studentId;
         this.elements.studentModal.classList.remove('hidden');
-        this.elements.studentForm.reset(); // Limpa o formulário sempre ao abrir
+        this.elements.studentForm.reset(); 
         if (studentId) {
             const student = this.state.students[studentId];
             this.elements.modalTitle.textContent = `📋 Ficha de ${student.name}`;
@@ -629,8 +601,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             return;
         }
         
-        // No Realtime DB, é melhor usar push() para gerar IDs únicos se for novo,
-        // mas o ID 'Date.now()' funciona para esta estrutura.
         const studentId = this.elements.studentIdInput.value || Date.now().toString();
         
         const studentData = {
@@ -640,7 +610,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             mathStage: document.getElementById('mathStage').value.trim(),
             portStage: document.getElementById('portStage').value.trim(),
             engStage: document.getElementById('engStage').value.trim(),
-            // Garante que os históricos sejam arrays (JSON não armazena arrays vazios)
             programmingHistory: this.state.students[studentId]?.programmingHistory || [],
             reportHistory: this.state.students[studentId]?.reportHistory || [],
             performanceLog: this.state.students[studentId]?.performanceLog || [],
@@ -648,11 +617,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             updatedAt: new Date().toISOString()
         };
         
-        // Atualiza o estado local
         this.state.students[studentId] = studentData;
         
         try {
-            // Salva o objeto 'students' inteiro de volta no nó 'lista_alunos'
             await this.setData('alunos', 'lista_alunos', { students: this.state.students });
             
             this.renderStudentList();
@@ -662,7 +629,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 this.elements.modalTitle.textContent = `📋 Ficha de ${studentData.name}`;
                 this.elements.deleteStudentBtn.style.display = 'block';
             }
-            // ATUALIZAÇÃO: Sincroniza o brain.json após salvar o aluno
             await this.updateBrainFromStudents();
             alert('Aluno salvo com sucesso!');
         } catch (error) {
@@ -675,17 +641,12 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         const studentName = this.state.students[this.state.currentStudentId].name;
         if (!confirm(`Tem certeza que deseja excluir o aluno "${studentName}"? Esta ação é irreversível.`)) return;
         
-        // Remove do estado local
         delete this.state.students[this.state.currentStudentId];
         
         try {
-            // Salva (sobrescreve) o objeto 'students' inteiro sem o aluno excluído
             await this.setData('alunos', 'lista_alunos', { students: this.state.students });
-
             this.renderStudentList();
             this.closeStudentModal();
-            
-            // ATUALIZAÇÃO: Sincroniza o brain.json após excluir o aluno
             await this.updateBrainFromStudents();
             alert('Aluno excluído com sucesso!');
         } catch (error) {
@@ -693,7 +654,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             alert('Erro ao excluir aluno. Tente novamente.');
         }
     },
-    // ATUALIZAÇÃO DO BRAIN (Refatorado para Realtime DB)
+    
     async updateBrainFromStudents() {
         let currentBrainData = await this.fetchBrainData();
         let updatedBrain = { ...currentBrainData };
@@ -702,8 +663,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             updatedBrain.alunos = {};
         }
         
-        // Limpa alunos antigos que não existem mais no state.students
-        // (necessário se o brain for mesclado de outra fonte)
         const currentStudentIds = Object.keys(this.state.students);
         for (const brainId in updatedBrain.alunos) {
             if (!currentStudentIds.includes(brainId)) {
@@ -711,7 +670,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             }
         }
 
-        // Atualiza ou adiciona os alunos do state.students no brain
         for (const [id, student] of Object.entries(this.state.students)) {
             updatedBrain.alunos[id] = {
                 id: id,
@@ -721,21 +679,17 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 estagio_matematica: student.mathStage,
                 estagio_portugues: student.portStage,
                 estagio_ingles: student.engStage,
-                // Garante que o histórico seja um array
                 historico: student.performanceLog || [],
-                metas: updatedBrain.alunos[id]?.metas || {}, // Preserva metas existentes
-                observacoes: updatedBrain.alunos[id]?.observacoes || [] // Preserva observações
+                metas: updatedBrain.alunos[id]?.metas || {}, 
+                observacoes: updatedBrain.alunos[id]?.observacoes || [] 
             };
         }
-
-        // Salva o brain.json atualizado no Firebase
         await this.saveBrainData(updatedBrain);
         console.log("brain.json atualizado com base nos alunos da plataforma (Realtime DB).");
     },
     loadStudentHistories(studentId) {
         const student = this.state.students[studentId];
         if (!student) return this.clearStudentHistories();
-        // O Realtime DB pode retornar 'undefined' para arrays vazios
         this.renderHistory('programmingHistory', student.programmingHistory || []);
         this.renderHistory('reportHistory', student.reportHistory || []);
         this.renderHistory('performanceLog', student.performanceLog || []);
@@ -772,7 +726,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             }
         }
         
-        // Garante que o array de histórico exista no estado local
         if (!this.state.students[this.state.currentStudentId][historyType]) {
             this.state.students[this.state.currentStudentId][historyType] = [];
         }
@@ -780,12 +733,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.state.students[this.state.currentStudentId][historyType].push(entry);
         
         try {
-            // Salva o objeto 'students' inteiro
             await this.setData('alunos', 'lista_alunos', { students: this.state.students });
-            
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
             formElement.reset();
-            // ATUALIZAÇÃO: Sincroniza o brain.json
             await this.updateBrainFromStudents();
         } catch (error) {
             console.error('Erro ao salvar histórico:', error);
@@ -796,8 +746,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     renderHistory(historyType, historyData) {
         const container = this.elements[historyType];
         
-        // Realtime DB pode retornar um objeto em vez de um array se as chaves forem numéricas
-        // Garantimos que estamos lidando com um array
         const historyArray = Array.isArray(historyData) ? historyData : Object.values(historyData);
 
         if (!historyArray || historyArray.length === 0) {
@@ -805,13 +753,12 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             return;
         }
         container.innerHTML = historyArray
-            .sort((a, b) => new Date(b.date) - new Date(a.date)) // 'date' pode não existir, 'createdAt' seria melhor
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
             .map(entry => this.createHistoryItemHTML(historyType, entry))
             .join('');
     },
     createHistoryItemHTML(type, entry) {
         let detailsHTML = '';
-        // Usa 'createdAt' como fallback se 'date' não estiver preenchido
         const entryDate = entry.date || entry.createdAt;
         const date = entryDate ? new Date(entryDate.startsWith('20') ? entryDate : new Date(entryDate + 'T12:00:00Z')).toLocaleDateString('pt-BR') : 'Data Inválida';
         
@@ -830,7 +777,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             <div class="history-item">
                 <div class="history-item-header">
                     <span class="history-date">${date}</span>
-                    <span class.="history-type">${entry.type || 'REGISTRO'}</span>
+                    <span class="history-type">${entry.type || 'REGISTRO'}</span>
                 </div>
                 ${detailsHTML}
                 <button class="delete-history-btn" onclick="App.deleteHistoryEntry('${type}', '${entry.id}')" title="Excluir">&times;</button>
@@ -841,22 +788,17 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         
         const student = this.state.students[this.state.currentStudentId];
         
-        // Garante que é um array e filtra
         let historyArray = Array.isArray(student[historyType]) ? student[historyType] : Object.values(student[historyType]);
         student[historyType] = historyArray.filter(entry => entry.id !== entryId);
         
         try {
-            // Salva o objeto 'students' inteiro
             await this.setData('alunos', 'lista_alunos', { students: this.state.students });
-            
             this.renderHistory(historyType, student[historyType]);
-            
-            // ATUALIZAÇÃO: Sincroniza o brain.json
             await this.updateBrainFromStudents();
         } catch (error) {
             alert('Falha ao excluir o registro.');
             console.error(error);
-            this.loadStudents(); // Recarrega tudo se der errado
+            this.loadStudents(); 
         }
     },
     async analyzeStudent(studentId) {
@@ -917,7 +859,7 @@ ${'='.repeat(50)}
 Última atualização: ${new Date().toLocaleString('pt-BR')}`;
         analysisContent.textContent = analysis;
     },
-    // O upload para o Cloudinary AINDA É USADO para anexos de boletins.
+    // Esta função é usada para anexos de boletins
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js');
