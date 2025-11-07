@@ -7,10 +7,12 @@ const App = {
         students: {},
         currentStudentId: null,
         mediaRecorder: null,
+        recordingStream: null, // Armazena o stream para poder pará-lo
         recordingChunks: [],
         recordingInterval: null,
         recordingTime: 0,
-        reportData: null
+        reportData: null,
+        audioFile: null // Armazena o áudio (gravado ou enviado)
     },
     elements: {},
     // =====================================================================
@@ -29,26 +31,31 @@ const App = {
         this.mapDOMElements();
         this.addEventListeners();
         this.loadStudents();
-        this.setupRecording();
+        // setupRecording() removido daqui. Será chamado "Just-in-Time".
     },
     mapDOMElements() {
         this.elements = {
             // Geral
             logoutButton: document.getElementById('logout-button'),
             systemOptionsBtn: document.getElementById('system-options-btn'),
-            // Diário de Reuniões
+            
+            // Diário de Reuniões (UI Refatorada)
             meetingDate: document.getElementById('meetingDate'),
             audioUpload: document.getElementById('audioUpload'),
+            audioFileName: document.getElementById('audioFileName'), // Novo
             startRecordingBtn: document.getElementById('startRecordingBtn'),
+            stopRecordingBtn: document.getElementById('stopRecordingBtn'), // Novo
             recordingStatus: document.getElementById('recordingStatus'),
             recordingTime: document.getElementById('recordingTime'),
             additionalNotes: document.getElementById('additionalNotes'),
             processAudioBtn: document.getElementById('processAudioBtn'),
             viewReportBtn: document.getElementById('viewReportBtn'),
+            
             // Relatórios
             reportSection: document.getElementById('reportSection'),
             reportContent: document.getElementById('reportContent'),
             downloadReportBtn: document.getElementById('downloadReportBtn'),
+            
             // Módulo de Alunos
             addStudentBtn: document.getElementById('addStudentBtn'),
             studentSearch: document.getElementById('studentSearch'),
@@ -68,7 +75,8 @@ const App = {
             reportHistory: document.getElementById('reportHistory'),
             performanceHistory: document.getElementById('performanceHistory'),
             studentAnalysisContent: document.getElementById('student-analysis-content'),
-            // NOVO: Elementos para brain.json
+            
+            // Módulo Brain
             brainFileUpload: document.getElementById('brainFileUpload'),
             uploadBrainFileBtn: document.getElementById('uploadBrainFileBtn'),
         };
@@ -77,14 +85,18 @@ const App = {
         // Geral
         this.elements.logoutButton.addEventListener('click', () => firebase.auth().signOut());
         this.elements.systemOptionsBtn.addEventListener('click', () => this.promptForReset());
-        // Diário de Reuniões
+        
+        // Diário de Reuniões (Lógica Refatorada)
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
-        this.elements.startRecordingBtn.addEventListener('click', () => this.toggleRecording());
+        this.elements.startRecordingBtn.addEventListener('click', () => this.startRecording());
+        this.elements.stopRecordingBtn.addEventListener('click', () => this.stopRecording());
         this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI());
         this.elements.viewReportBtn.addEventListener('click', () => this.showReport());
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
-        // NOVO: Evento para upload do brain.json
+        
+        // Módulo Brain
         this.elements.uploadBrainFileBtn.addEventListener('click', () => this.handleBrainFileUpload());
+        
         // Alunos
         this.elements.addStudentBtn.addEventListener('click', () => this.openStudentModal());
         this.elements.studentSearch.addEventListener('input', () => this.renderStudentList());
@@ -98,82 +110,94 @@ const App = {
         this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm));
         this.elements.studentModal.addEventListener('click', (e) => { if (e.target === this.elements.studentModal) this.closeStudentModal(); });
     },
-    setupRecording() {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    const options = { mimeType: 'audio/webm;codecs=opus' };
-                    if (MediaRecorder.isTypeSupported(options.mimeType)) {
-                        this.state.mediaRecorder = new MediaRecorder(stream, options);
-                    } else {
-                        console.warn('audio/webm;codecs=opus não suportado, usando padrão do navegador.');
-                        this.state.mediaRecorder = new MediaRecorder(stream);
-                    }
-                    
-                    this.state.mediaRecorder.ondataavailable = event => {
-                        this.state.recordingChunks.push(event.data);
-                    };
-                    this.state.mediaRecorder.onstop = () => {
-                        stream.getTracks().forEach(track => track.stop());
-                        this.setupRecording(); // Re-habilita para a próxima gravação
-                    };
-                })
-                .catch(err => {
-                    console.error('Erro ao acessar microfone:', err);
-                    alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
-                });
-        } else {
-            alert('Seu navegador não suporta gravação de áudio.');
-        }
-    },
     
     // =====================================================================
     // ================== CORREÇÃO: LÓGICA DE GRAVAÇÃO ===================
     // =====================================================================
-    toggleRecording() {
-        if (!this.state.mediaRecorder) {
-            alert('Recursos de gravação não estão prontos. Tentando inicializar...');
-            this.setupRecording();
+    
+    async startRecording() {
+        // Pede permissão "Just-in-Time"
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.state.recordingStream = stream; // Armazena o stream
+        } catch (err) {
+            console.error('Erro ao acessar microfone:', err);
+            alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
             return;
         }
 
-        const btn = this.elements.startRecordingBtn;
-
-        if (this.state.mediaRecorder.state === 'recording') {
-            // PARAR A GRAVAÇÃO
-            this.state.mediaRecorder.stop();
-            clearInterval(this.state.recordingInterval);
-            this.elements.recordingStatus.classList.add('hidden');
-            this.elements.processAudioBtn.disabled = false;
-            
-            btn.textContent = 'Iniciar Gravação';
-            btn.classList.remove('btn-danger'); // Remove a cor vermelha
-
+        const options = { mimeType: 'audio/webm;codecs=opus' };
+        if (MediaRecorder.isTypeSupported(options.mimeType)) {
+            this.state.mediaRecorder = new MediaRecorder(stream, options);
         } else {
-            // INICIAR A GRAVAÇÃO
-            this.state.recordingChunks = [];
-            this.state.recordingTime = 0;
-            this.elements.recordingTime.textContent = '00:00';
-            this.state.mediaRecorder.start();
-            
-            this.elements.recordingStatus.classList.remove('hidden');
-            this.elements.processAudioBtn.disabled = true;
-            
-            btn.textContent = 'Parar Gravação';
-            btn.classList.add('btn-danger'); // Adiciona uma cor vermelha
-
-            this.state.recordingInterval = setInterval(() => {
-                this.state.recordingTime++;
-                const minutes = Math.floor(this.state.recordingTime / 60).toString().padStart(2, '0');
-                const seconds = (this.state.recordingTime % 60).toString().padStart(2, '0');
-                this.elements.recordingTime.textContent = `${minutes}:${seconds}`;
-            }, 1000);
+            console.warn('audio/webm;codecs=opus não suportado, usando padrão do navegador.');
+            this.state.mediaRecorder = new MediaRecorder(stream);
         }
+
+        this.state.mediaRecorder.ondataavailable = event => {
+            this.state.recordingChunks.push(event.data);
+        };
+        
+        // Quando parar, processa os chunks
+        this.state.mediaRecorder.onstop = () => {
+            const mimeType = this.state.mediaRecorder.mimeType;
+            const audioBlob = new Blob(this.state.recordingChunks, { type: mimeType });
+            this.state.audioFile = new File([audioBlob], 'gravacao.webm', { type: mimeType }); // Salva o arquivo final
+            
+            // Limpa o stream e os chunks
+            this.state.recordingStream.getTracks().forEach(track => track.stop());
+            this.state.recordingStream = null;
+            this.state.recordingChunks = [];
+            
+            this.elements.audioFileName.textContent = `Gravação concluída: gravacao.webm`;
+            this.elements.processAudioBtn.disabled = false;
+        };
+
+        // INICIAR A GRAVAÇÃO
+        this.state.recordingChunks = [];
+        this.state.audioFile = null; // Limpa áudio anterior
+        this.elements.audioUpload.value = null; // Limpa upload anterior
+        this.elements.audioFileName.textContent = '';
+        this.state.recordingTime = 0;
+        this.elements.recordingTime.textContent = '00:00';
+        
+        this.state.mediaRecorder.start();
+        
+        this.elements.recordingStatus.classList.remove('hidden');
+        this.elements.startRecordingBtn.classList.add('hidden');
+        this.elements.stopRecordingBtn.classList.remove('hidden');
+        this.elements.processAudioBtn.disabled = true;
+
+        this.state.recordingInterval = setInterval(() => {
+            this.state.recordingTime++;
+            const minutes = Math.floor(this.state.recordingTime / 60).toString().padStart(2, '0');
+            const seconds = (this.state.recordingTime % 60).toString().padStart(2, '0');
+            this.elements.recordingTime.textContent = `${minutes}:${seconds}`;
+        }, 1000);
     },
+
+    stopRecording() {
+        if (this.state.mediaRecorder && this.state.mediaRecorder.state === 'recording') {
+            this.state.mediaRecorder.stop();
+        }
+        clearInterval(this.state.recordingInterval);
+        this.elements.recordingStatus.classList.add('hidden');
+        this.elements.startRecordingBtn.classList.remove('hidden');
+        this.elements.stopRecordingBtn.classList.add('hidden');
+    },
+
     handleFileUpload() {
         const file = this.elements.audioUpload.files[0];
         if (file) {
+            this.state.audioFile = file; // Salva o arquivo do upload
+            this.state.recordingChunks = []; // Limpa gravação anterior
+            this.elements.audioFileName.textContent = `Arquivo selecionado: ${file.name}`;
             this.elements.processAudioBtn.disabled = false;
+        } else {
+            this.state.audioFile = null;
+            this.elements.audioFileName.textContent = '';
+            this.elements.processAudioBtn.disabled = true;
         }
     },
 
@@ -183,16 +207,10 @@ const App = {
 
     /**
      * Função para fazer upload de ÁUDIO para o Cloudinary.
-     * Áudio é tratado como 'raw' ou 'video' (para transcrição nativa, se aplicável)
      */
     async uploadAudioToCloudinary(audioBlob) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
-        }
-
-        // Converte blob para File se não for um arquivo (caso da gravação)
-        if (!(audioBlob instanceof File)) {
-            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
         }
 
         const formData = new FormData();
@@ -227,21 +245,10 @@ const App = {
         this.elements.reportSection.classList.remove('hidden');
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
 
-        let audioBlob = null;
-        let mimeType = '';
+        let audioParaProcessar = this.state.audioFile;
 
         try {
-            const audioFile = this.elements.audioUpload.files[0];
-
-            if (audioFile) {
-                // Caso 1: Usuário enviou um arquivo (Galeria do Celular)
-                audioBlob = audioFile;
-                mimeType = audioFile.type;
-            } else if (this.state.recordingChunks.length > 0) {
-                // Caso 2: Usuário gravou um áudio
-                mimeType = this.state.mediaRecorder.mimeType;
-                audioBlob = new Blob(this.state.recordingChunks, { type: mimeType });
-            } else {
+            if (!audioParaProcessar) {
                 throw new Error('Nenhum áudio encontrado. Grave ou envie um arquivo primeiro.');
             }
 
@@ -250,7 +257,7 @@ const App = {
 
             // Etapa 1: Enviar para o Cloudinary
             this.elements.reportContent.textContent = 'Enviando áudio para o Cloudinary (banco de arquivos)...';
-            const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioBlob);
+            const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioParaProcessar);
 
             // Etapa 2: Chamar o Gemini com a URL do Cloudinary
             this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
@@ -259,6 +266,13 @@ const App = {
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
             this.renderReport(analysis);
+
+            // Limpa o áudio após o processamento
+            this.state.audioFile = null;
+            this.elements.audioUpload.value = null;
+            this.elements.audioFileName.textContent = "";
+            this.elements.processAudioBtn.disabled = true;
+
 
         } catch (error) {
             console.error('Erro ao processar áudio:', error);
@@ -279,7 +293,7 @@ const App = {
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
 
         // =====================================================================
-        // ================ CORREÇÃO: PROMPT ANTI-ALUCINAÇÃO ===================
+        // ================ PROMPT ANTI-ALUCINAÇÃO (REAL) ===================
         // =====================================================================
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
@@ -848,7 +862,7 @@ ${'='.repeat(50)}
         if (repetitions.length >= 3 && lowGrades.length > 0) {
             analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
 `;
-        } else if (!student.programmingHistory || student.programmingHistory.length === 0) {
+        } else if (!student.programmingHistory || (Array.isArray(student.programmingHistory) && student.programmingHistory.length === 0)) {
             analysis += `   O aluno não possui programação registrada. Iniciar a programação de materiais é fundamental para acompanhar o progresso.
 `;
         } else {
@@ -876,8 +890,8 @@ ${'='.repeat(50)}
     promptForReset() {
         const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
         if (code === '*177') {
-            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite 'APAGAR TUDO' e clique em OK.");
-            if (confirmation === 'APAGAR TUDO') {
+            const confirmation = prompt("ATENÇÃO: AÇÃO IRREVERSÍVEL!\nIsto irá apagar TODOS os seus diários, inventário e DADOS DE ALUNOS para SEMPRE.\nPara confirmar, digite '*177' e clique em OK.");
+            if (confirmation === '*177') {
                 this.hardResetUserData();
             } else {
                 alert("Operação de reset cancelada.");
