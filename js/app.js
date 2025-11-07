@@ -194,12 +194,6 @@ const App = {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
 
-        // =====================================================================
-        // ================= CORREÇÃO DE ARQUITETURA DE API ====================
-        // =====================================================================
-        // 1. Voltando para a API v1 (estável), que aceita chaves de API.
-        // 2. Usando o modelo `gemini-1.5-flash-latest`.
-        // =====================================================================
         const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const textPrompt = `
@@ -236,10 +230,10 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         `;
 
         // =====================================================================
-        // ================= CORREÇÃO DE ARQUITETURA DE API ====================
+        // ================= CORREÇÃO DO TYPO (snake_case) ===================
         // =====================================================================
-        // O body (corpo) agora usa `inlineData` (dados Base64) em vez de `fileData` (URL).
-        // Isso é compatível com o endpoint v1 e com chaves de API.
+        // O erro mostrou que "response_mime_type"
+        // estava errado. O endpoint v1 espera "responseMimeType" (camelCase).
         // =====================================================================
         const requestBody = {
             "contents": [
@@ -256,7 +250,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 }
             ],
             "generationConfig": {
-                "response_mime_type": "application/json"
+                "responseMimeType": "application/json" // <--- CORRIGIDO
             }
         };
 
