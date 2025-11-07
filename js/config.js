@@ -22,4 +22,4 @@ const cloudinaryConfig = {
 // --- Configuração da GEMINI API (APENAS PARA FRONTEND - USO DEMO) ---
 // AVISO: Esta chave será exposta no frontend. Use apenas para demonstração interna.
 // Após aprovação, remova esta chave e migre para um backend proxy seguro.
-window.GEMINI_API_KEY = "AIzaSyAETyc4BTrmQV_eCHwMEimTWh2vyKBwO8Q"; // Ex: "AIzaSy..."
+window.GEMINI_API_KEY = "AIzaSyBpme4fuJ4etdCtZjt1nkujEd1b4SKP-ww"; // Ex: "AIzaSy..."
