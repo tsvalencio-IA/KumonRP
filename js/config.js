@@ -20,6 +20,5 @@ const cloudinaryConfig = {
 };
 
 // --- Configuração da GEMINI API (APENAS PARA FRONTEND - USO DEMO) ---
-// AVISO: Esta chave será exposta no frontend. Use apenas para demonstração interna.
-// Após aprovação, remova esta chave e migre para um backend proxy seguro.
+// Esta é a chave do AI Studio que você gerou
 window.GEMINI_API_KEY = "AIzaSyBpme4fuJ4etdCtZjt1nkujEd1b4SKP-ww"; // Ex: "AIzaSy..."
