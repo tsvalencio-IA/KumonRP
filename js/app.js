@@ -4,6 +4,7 @@ const App = {
     state: {
         userId: null,
         db: null, // Agora será uma instância do Realtime Database
+        // functions: null, // REMOVIDO - Não usaremos Cloud Functions
         students: {},
         currentStudentId: null,
         reportData: null,
@@ -22,6 +23,7 @@ const App = {
         document.getElementById('app-container').classList.remove('hidden');
         this.state.userId = user.uid;
         this.state.db = databaseInstance; // Recebendo firebase.database()
+        
         document.getElementById('userEmail').textContent = user.email;
         this.mapDOMElements();
         this.addEventListeners();
@@ -118,46 +120,23 @@ const App = {
     },
 
     // =====================================================================
-    // ================== ARQUITETURA DE IA (Cloudinary + Gemini) ================
+    // ================== ARQUITETURA DE IA (Base64) =======================
     // =====================================================================
 
     /**
-     * Função para fazer upload de ÁUDIO para o Cloudinary.
+     * NOVO: Converte um arquivo (File) para uma string Base64.
      */
-    async uploadAudioToCloudinary(audioBlob) {
-        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
-        }
-
-        // Converte blob para File se não for um arquivo (caso da gravação)
-        if (!(audioBlob instanceof File)) {
-            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
-        }
-
-        const formData = new FormData();
-        formData.append('file', audioBlob);
-        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
-        formData.append('folder', `${this.state.userId}/reunioes`);
-        
-        // Usar 'raw' permite que o Gemini busque o arquivo
-        formData.append('resource_type', 'raw');
-
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
-            method: 'POST',
-            body: formData
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                // Remove o prefixo "data:audio/ogg;base64,"
+                const base64String = reader.result.split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = (error) => reject(error);
         });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
-        }
-
-        const result = await response.json();
-        // Retorna a URL e o mime-type original para o Gemini
-        return {
-            url: result.secure_url,
-            mimeType: audioBlob.type
-        };
     },
 
     async processAudioWithAI() {
@@ -176,13 +155,18 @@ const App = {
             // Obter brain.json do Firebase (Contexto)
             const brainData = await this.fetchBrainData();
 
-            // Etapa 1: Enviar para o Cloudinary
-            this.elements.reportContent.textContent = 'Enviando áudio para o Cloudinary (banco de arquivos)...';
-            const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioParaProcessar);
+            // Etapa 1: Converter áudio para Base64 (NÃO usamos mais Cloudinary aqui)
+            this.elements.reportContent.textContent = 'Codificando áudio (Base64)...';
+            const base64Audio = await this.fileToBase64(audioParaProcessar);
+            const mimeType = audioParaProcessar.type;
+            
+            if (!base64Audio) {
+                throw new Error("Falha ao converter áudio para Base64.");
+            }
 
-            // Etapa 2: Chamar o Gemini com a URL do Cloudinary
-            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
-            const analysis = await this.callGeminiForAnalysis(audioUrl, uploadedMimeType, brainData || {});
+            // Etapa 2: Chamar a API Generative Language (v1) com os dados
+            this.elements.reportContent.textContent = 'Enviando dados do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
+            const analysis = await this.callGeminiForAnalysis(base64Audio, mimeType, brainData || {});
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -203,9 +187,9 @@ const App = {
     },
 
     /**
-     * Chama a API multimodal do Gemini (1.5 Flash) enviando a URL do áudio.
+     * Chama a API Generative Language (v1) com dados Base64.
      */
-    async callGeminiForAnalysis(audioUrl, mimeType, brainData) {
+    async callGeminiForAnalysis(base64Audio, mimeType, brainData) {
         if (!window.GEMINI_API_KEY) {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
@@ -213,26 +197,16 @@ const App = {
         // =====================================================================
         // ================= CORREÇÃO DE ARQUITETURA DE API ====================
         // =====================================================================
-        // 1. MUDANÇA DE ENDPOINT: Saímos da `generativelanguage.googleapis.com`
-        //    (que estava dando 404) e entramos na `aiplatform.googleapis.com`
-        //    (Vertex AI), que você JÁ TEM ATIVADA.
-        // 2. MUDANÇA DE URL: A URL da Vertex AI requer PROJECT_ID e REGIÃO.
-        //    - PROJECT_ID: `kumon-c63a2`
-        //    - REGIÃO: `us-central1` (Padrão)
-        // 3. MUDANÇA DE MODELO: Usando `gemini-1.5-flash-001` (nome estável na Vertex).
+        // 1. Voltando para a API v1 (estável), que aceita chaves de API.
+        // 2. Usando o modelo `gemini-1.5-flash-latest`.
         // =====================================================================
-        
-        const PROJECT_ID = "kumon-c63a2";
-        const REGION = "us-central1";
-        const MODEL_NAME = "gemini-1.5-flash-001"; // Usando o modelo estável da Vertex
-
-        const API_URL = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${MODEL_NAME}:generateContent?key=${window.GEMINI_API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const textPrompt = `
-Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
+Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido como dados Base64) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
 REGRAS RÍGIDAS (NÃO QUEBRE):
-1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio na URL fornecida. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
+1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
 2.  **NÃO INVENTE TRANSCRIÇÃO**: Se o áudio for silencioso, NÃO gere uma transcrição baseada no contexto. A transcrição DEVE vir 100% do áudio.
 3.  **USE O CONTEXTO**: Após transcrever, use o "brain.json" para identificar alunos (fuzzy match) e preencher o resto do relatório.
 4.  **SEJA FIEL AOS FATOS**: O resumo executivo e as dores DEVEM ser baseados no que foi dito no áudio. Use o "brain.json" apenas para confirmar dados (como ID do aluno ou estágio).
@@ -240,17 +214,11 @@ REGRAS RÍGIDAS (NÃO QUEBRE):
 CONTEXTO (brain.json):
 ${JSON.stringify(brainData, null, 2)}
 
-PROCESSE O ÁUDIO (na URL) e retorne APENAS o JSON.
+PROCESSE O ÁUDIO e retorne APENAS o JSON.
 
 FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 {
-  "meta": {
-    "created_at": "${new Date().toISOString()}",
-    "sala_id": "REUNIAO_LOCAL",
-    "audio_url": "${audioUrl}",
-    "duration_s": "REAL_DURATION_IN_SECONDS",
-    "parts": 1
-  },
+  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "duration_s": "REAL_DURATION_IN_SECONDS", "parts": 1 },
   "consentimentos": [],
   "transcription_raw": "string completa da transcrição REAL do áudio",
   "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
@@ -270,26 +238,25 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         // =====================================================================
         // ================= CORREÇÃO DE ARQUITETURA DE API ====================
         // =====================================================================
-        // O body (corpo) da Vertex AI é diferente. Ele usa `role` e
-        // `responseMimeType` (camelCase) está dentro de `generationConfig`.
+        // O body (corpo) agora usa `inlineData` (dados Base64) em vez de `fileData` (URL).
+        // Isso é compatível com o endpoint v1 e com chaves de API.
         // =====================================================================
         const requestBody = {
             "contents": [
                 {
-                    "role": "USER",
                     "parts": [
                         { "text": textPrompt },
                         {
-                            "fileData": {
+                            "inlineData": {
                                 "mimeType": mimeType,
-                                "fileUri": audioUrl
+                                "data": base64Audio
                             }
                         }
                     ]
                 }
             ],
             "generationConfig": {
-                "responseMimeType": "application/json"
+                "response_mime_type": "application/json"
             }
         };
 
@@ -303,18 +270,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Erro da API Gemini (Vertex AI): ${errorData.error?.message || 'Erro desconhecido'}`);
+            throw new Error(`Erro da API Gemini: ${errorData.error?.message || 'Erro desconhecido'}`);
         }
 
         const data = await response.json();
         
-        // A resposta da Vertex AI é LIGEIRAMENTE diferente
         if (!data.candidates || !data.candidates[0].content.parts[0].text) {
-             // O log de erro (400) nos ensinou que a Vertex
-             // pode retornar um erro de JSON inválido se o formato estiver errado.
-             // Se o erro 400 voltar, é porque o `fileData` não é suportado
-             // nem mesmo na Vertex.
-             throw new Error('Resposta inesperada da API Vertex AI. O modelo pode não ter retornado texto.');
+             throw new Error('Resposta inesperada da API Gemini. O modelo pode não ter retornado texto.');
         }
 
         const text = data.candidates[0].content.parts[0].text;
