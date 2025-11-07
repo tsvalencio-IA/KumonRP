@@ -63,13 +63,9 @@ const App = {
             performanceForm: document.getElementById('performanceForm'),
             studentAnalysisContent: document.getElementById('student-analysis-content'),
             
-            // =====================================================================
-            // ======================= CORREÇÃO DO BUG 1 =========================
-            // =====================================================================
-            // Mapeia os containers de histórico para as chaves lógicas corretas
             programmingHistory: document.getElementById('programmingHistory'),
             reportHistory: document.getElementById('reportHistory'),
-            performanceLog: document.getElementById('performanceHistory'), // <--- CORRIGIDO
+            performanceLog: document.getElementById('performanceHistory'), 
 
             // Módulo Brain
             brainFileUpload: document.getElementById('brainFileUpload'),
@@ -100,7 +96,7 @@ const App = {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab)));
         this.elements.programmingForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'programmingHistory', this.elements.programmingForm));
         this.elements.reportForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'reportHistory', this.elements.reportForm));
-        this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm)); // <--- CORRETO
+        this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm)); 
         this.elements.studentModal.addEventListener('click', (e) => { if (e.target === this.elements.studentModal) this.closeStudentModal(); });
     },
     
@@ -214,8 +210,13 @@ const App = {
             throw new Error('GEMINI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
         }
 
-        // Mantendo o nome oficial 'latest'. O erro 404 é de configuração do Cloud.
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        // =====================================================================
+        // ================= CORREÇÃO: ENDPOINT DA API =======================
+        // =====================================================================
+        // O erro confirma que `v1beta` está errado.
+        // A correção é mudar para o endpoint estável `v1`.
+        const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${window.GEMINI_API_KEY}`;
+        // =====================================================================
 
         const textPrompt = `
 Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
@@ -618,20 +619,18 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     loadStudentHistories(studentId) {
         const student = this.state.students[studentId];
         if (!student) return this.clearStudentHistories();
-        // As chamadas aqui estão corretas e agora encontrarão os elementos no 'map'
         this.renderHistory('programmingHistory', student.programmingHistory || []);
         this.renderHistory('reportHistory', student.reportHistory || []);
         this.renderHistory('performanceLog', student.performanceLog || []);
     },
     clearStudentHistories() {
-        // As chaves aqui estão corretas e agora encontrarão os elementos no 'map'
         if (this.elements.programmingHistory) {
             this.elements.programmingHistory.innerHTML = '<p>Nenhuma programação registrada.</p>';
         }
         if (this.elements.reportHistory) {
             this.elements.reportHistory.innerHTML = '<p>Nenhum boletim registrado.</p>';
         }
-        if (this.elements.performanceLog) { // <--- CORRIGIDO
+        if (this.elements.performanceLog) { 
             this.elements.performanceLog.innerHTML = '<p>Nenhum registro de desempenho.</p>';
         }
     },
@@ -698,7 +697,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
     },
 
     renderHistory(historyType, historyData) {
-        const container = this.elements[historyType]; // Agora 'performanceLog' será encontrado
+        const container = this.elements[historyType]; 
         if (!container) {
             console.error(`Elemento de container '${historyType}' não encontrado no DOM.`);
             return;
@@ -772,9 +771,6 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
     },
     
-    // =====================================================================
-    // ====================== CORREÇÃO DO BUG 3 (IA) =======================
-    // =====================================================================
     async analyzeStudent(studentId) {
         if (!studentId) return;
         const analysisContent = this.elements.studentAnalysisContent;
@@ -789,16 +785,13 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         const reportHistory = Array.isArray(student.reportHistory) ? student.reportHistory : Object.values(student.reportHistory || {});
         const programmingHistory = Array.isArray(student.programmingHistory) ? student.programmingHistory : Object.values(student.programmingHistory || {});
         
-        // Combina todos os registros para verificar se há dados suficientes
         const totalHistoryEntries = performanceLog.length + reportHistory.length + programmingHistory.length;
 
         let analysis = `ANÁLISE INTELIGENTE - ${student.name}
 ${'='.repeat(50)}
 `;
-        // Flag para rastrear se alguma análise real foi adicionada
         let hasInsights = false;
         
-        // Verifica se há dados suficientes para uma análise
         if (totalHistoryEntries < 2) {
             analysis += `💡 DADOS INSUFICIENTES:
    Ainda não há histórico suficiente para gerar uma análise de tendências.
@@ -806,7 +799,6 @@ ${'='.repeat(50)}
    AÇÃO: Continue registrando o desempenho, programação e boletins do aluno.
 `;
         } else {
-            // Lógica de análise (executa apenas se houver dados)
             const repetitions = performanceLog.filter(e => e.type === 'REPETICAO');
             if (repetitions.length >= 3) {
                 analysis += `🚨 ALERTA DE PLATÔ: ${repetitions.length} repetições registradas.
@@ -847,8 +839,6 @@ ${'='.repeat(50)}
                 analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
 `;
             } else if (!hasInsights) {
-                // Se nenhum alerta foi disparado, E temos dados suficientes,
-                // aí sim podemos dizer que o progresso é estável.
                 analysis += `   O progresso parece estável. Manter o acompanhamento e registrar elogios para reforço positivo.
 `;
             } else {
@@ -861,7 +851,6 @@ ${'='.repeat(50)}
 Última atualização: ${new Date().toLocaleString('pt-BR')}`;
         analysisContent.textContent = analysis;
     },
-    // =====================================================================
 
     // Esta função é usada APENAS para anexos de boletins
     async uploadFileToCloudinary(file, folder) {
