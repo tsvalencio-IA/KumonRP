@@ -16,9 +16,9 @@ const firebaseConfig = {
 // --- Configuração do Cloudinary (PREENCHA ESTES VALORES) ---
 const cloudinaryConfig = {
     cloudName: "djtiaygrs",
-    uploadPreset: "kumon_ia" // Usado para anexos de boletim
+    uploadPreset: "kumon_ia" // Usado para upload de áudio e boletins
 };
 
-// --- Configuração da API de IA (REMOVIDA DO FRONTEND) ---
-// A lógica de IA agora roda no backend (Cloud Function)
-// window.GEMINI_API_KEY = "REMOVIDO_POR_SEGURANÇA"; 
+// --- ConfigURAÇÃO DA OPENAI API (NOVA ARQUITETURA) ---
+// AVISO: Esta chave será exposta no frontend.
+window.OPENAI_API_KEY = "COLE_A_SUA_CHAVE_DA_OPENAI_AQUI"; // Ex: "sk-..."
