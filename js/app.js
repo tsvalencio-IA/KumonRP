@@ -1,13 +1,15 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
-// RE-ARQUITETADO PARA USAR A CHAVE DO "AI STUDIO" (v1beta)
+// RE-ARQUITETADO PARA USAR FIREBASE STORAGE + CLOUD FUNCTIONS
 const App = {
     state: {
         userId: null,
-        db: null, // Agora será uma instância do Realtime Database
+        db: null, // Instância do Realtime Database
+        storage: null, // Instância do Storage
         students: {},
         currentStudentId: null,
         reportData: null,
-        audioFile: null // Armazena o áudio (gravado ou enviado)
+        audioFile: null, // Armazena o áudio (gravado ou enviado)
+        currentReportListener: null // Armazena o listener ativo do DB
     },
     elements: {},
     // =====================================================================
@@ -23,6 +25,17 @@ const App = {
         this.state.userId = user.uid;
         this.state.db = databaseInstance; // Recebendo firebase.database()
         
+        // =====================================================================
+        // ================== INICIALIZAÇÃO DO STORAGE =========================
+        // =====================================================================
+        try {
+            this.state.storage = firebase.storage();
+        } catch (e) {
+            console.error("Erro ao inicializar Firebase Storage:", e);
+            alert("Erro fatal: Não foi possível inicializar o Storage.");
+        }
+        // =====================================================================
+
         document.getElementById('userEmail').textContent = user.email;
         this.mapDOMElements();
         this.addEventListeners();
@@ -80,7 +93,7 @@ const App = {
         
         // Diário de Reuniões (Lógica Refatorada)
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
-        this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI());
+        this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI()); // <--- MUDANÇA DE LÓGICA
         this.elements.viewReportBtn.addEventListener('click', () => this.showReport());
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
         
@@ -119,79 +132,110 @@ const App = {
     },
 
     // =====================================================================
-    // ================== ARQUITETURA DE IA (AI Studio Key) ================
+    // ================== ARQUITETURA DE IA (STORAGE + FUNCTIONS) ==========
     // =====================================================================
 
     /**
-     * Esta função (upload para Cloudinary) PERMANECE.
+     * NOVA LÓGICA: Envia o áudio para o Storage e Ouve o Realtime Database
      */
-    async uploadAudioToCloudinary(audioBlob) {
-        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
-        }
-
-        if (!(audioBlob instanceof File)) {
-            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
-        }
-
-        const formData = new FormData();
-        formData.append('file', audioBlob);
-        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
-        formData.append('folder', `${this.state.userId}/reunioes`);
-        
-        // Usar 'raw' permite que a IA busque o arquivo
-        formData.append('resource_type', 'raw');
-
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
-        }
-
-        const result = await response.json();
-        return {
-            url: result.secure_url,
-            mimeType: audioBlob.type
-        };
-    },
-
     async processAudioWithAI() {
-        this.elements.reportContent.textContent = 'Processando áudio com IA...';
+        this.elements.reportContent.textContent = 'Iniciando processamento...';
         this.elements.reportContent.style.color = 'inherit'; // Reseta a cor
         this.elements.reportSection.classList.remove('hidden');
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
 
-        let audioParaProcessar = this.state.audioFile;
+        const audioParaProcessar = this.state.audioFile;
 
         try {
             if (!audioParaProcessar) {
-                throw new Error('Nenhum áudio encontrado. Grave ou envie um arquivo primeiro.');
+                throw new Error('Nenhum áudio encontrado. Envie um arquivo primeiro.');
+            }
+            if (!this.state.storage || !this.state.db || !this.state.userId) {
+                 throw new Error('Firebase não inicializado corretamente.');
+            }
+
+            // Limpa listener antigo, se houver
+            if (this.state.currentReportListener) {
+                this.state.currentReportListener.ref.off('value', this.state.currentReportListener.listener);
+                this.state.currentReportListener = null;
             }
 
             // Obter brain.json do Firebase (Contexto)
             const brainData = await this.fetchBrainData();
 
-            // Etapa 1: Enviar para o Cloudinary (para obter uma URL)
-            this.elements.reportContent.textContent = 'Enviando áudio para o Cloudinary (banco de arquivos)...';
-            const { url: audioUrl, mimeType: uploadedMimeType } = await this.uploadAudioToCloudinary(audioParaProcessar);
+            // 1. Gera um ID único para este relatório
+            const reportId = Date.now().toString();
+            const originalFileName = audioParaProcessar.name;
+            const additionalNotes = this.elements.additionalNotes.value || "";
 
-            // Etapa 2: Chamar a API Generative Language (v1beta) com a URL
-            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (Gemini 1.5 Flash)...';
-            const analysis = await this.callGeminiForAnalysis(audioUrl, uploadedMimeType, brainData || {});
+            // 2. Define os caminhos
+            const storagePath = `audio-uploads/${this.state.userId}/${reportId}/${originalFileName}`;
+            const dbReportPath = `gestores/${this.state.userId}/reports/${reportId}`;
 
-            // Salvar relatório no estado e exibir
-            this.state.reportData = analysis;
-            this.renderReport(analysis);
+            // 3. OUVIR O BANCO DE DADOS PRIMEIRO
+            //   A Cloud Function salvará o resultado em `dbReportPath`
+            this.elements.reportContent.textContent = 'Ouvindo o banco de dados por resultados...';
+            const reportRef = this.state.db.ref(dbReportPath);
+            
+            const listener = reportRef.on('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    
+                    // Se a função salvar um status de 'PROCESSANDO'
+                    if (data.status === 'PROCESSANDO') {
+                         this.elements.reportContent.textContent = 'Backend (Cloud Function) está analisando o áudio...';
+                    }
+                    
+                    // Se a função salvar o resultado final (jsonReport)
+                    if (data.status === 'COMPLETO' && data.jsonReport) {
+                        this.elements.reportContent.textContent = "Relatório recebido!";
+                        this.state.reportData = data.jsonReport; // Salva o JSON
+                        this.renderReport(this.state.reportData);
+                        
+                        // Para o listener
+                        reportRef.off('value', listener);
+                        this.state.currentReportListener = null;
 
-            // Limpa o áudio após o processamento
-            this.state.audioFile = null;
-            this.elements.audioUpload.value = null;
-            this.elements.audioFileName.textContent = "";
-            this.elements.processAudioBtn.disabled = true;
+                        // Limpa o formulário
+                        this.state.audioFile = null;
+                        this.elements.audioUpload.value = null;
+                        this.elements.audioFileName.textContent = "";
+                        this.elements.processAudioBtn.disabled = true;
+                    }
+                    
+                    // Se a função salvar um erro
+                    if (data.status === 'ERRO') {
+                         this.elements.reportContent.textContent = `Erro no backend: ${data.error}`;
+                         this.elements.reportContent.style.color = 'red';
+                         reportRef.off('value', listener);
+                         this.state.currentReportListener = null;
+                    }
+                }
+            });
+            
+            // Armazena o listener para poder pará-lo se necessário
+            this.state.currentReportListener = { ref: reportRef, listener: listener };
+
+            // 4. FAZER O UPLOAD PARA O STORAGE
+            //    Isso vai disparar a Cloud Function
+            this.elements.reportContent.textContent = 'Enviando áudio para o Firebase Storage...';
+            const storageRef = this.state.storage.ref(storagePath);
+            
+            // Salva metadados que a Cloud Function precisará
+            const metadata = {
+                customMetadata: {
+                    'userId': this.state.userId,
+                    'reportId': reportId,
+                    'dbReportPath': dbReportPath,
+                    'mimeType': audioParaProcessar.type,
+                    'additionalNotes': additionalNotes,
+                    'brainContext': JSON.stringify(brainData) // Envia o cérebro
+                }
+            };
+            
+            await storageRef.put(audioParaProcessar, metadata);
+            
+            this.elements.reportContent.textContent = 'Áudio enviado. Aguardando análise do servidor... (Isso pode levar de 1 a 2 minutos)';
 
         } catch (error) {
             console.error('Erro ao processar áudio:', error);
@@ -200,116 +244,10 @@ const App = {
         }
     },
 
-    /**
-     * ARQUITETURA: Chama a API v1beta (AI Studio) com a nova chave.
-     */
-    async callGeminiForAnalysis(audioUrl, mimeType, brainData) {
-        if (!window.GEMINI_API_KEY) {
-            throw new Error('GEMINI_API_KEY (do AI Studio) não encontrada em js/config.js.');
-        }
-
-        // =====================================================================
-        // ================= ARQUITETURA CORRETA (AI STUDIO) ===================
-        // =====================================================================
-        // 1. Usando a API `v1beta` (que aceita `fileData` para URLs).
-        // 2. Usando o modelo `gemini-1.5-flash` (sem o `-latest`).
-        // 3. Usando a chave de API do "AI Studio" (do config.js).
-        // =====================================================================
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.GEMINI_API_KEY}`;
-        
-        const textPrompt = `
-Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
-
-REGRAS RÍGIDAS (NÃO QUEBRE):
-1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio na URL fornecida. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
-2.  **NÃO INVENTE TRANSCRIÇÃO**: Se o áudio for silencioso, NÃO gere uma transcrição baseada no contexto. A transcrição DEVE vir 100% do áudio.
-3.  **USE O CONTEXTO**: Após transcrever, use o "brain.json" para identificar alunos (fuzzy match) e preencher o resto do relatório.
-4.  **SEJA FIEL AOS FATOS**: O resumo executivo e as dores DEVEM ser baseados no que foi dito no áudio. Use o "brain.json" apenas para confirmar dados (como ID do aluno ou estágio).
-
-CONTEXTO (brain.json):
-${JSON.stringify(brainData, null, 2)}
-
-PROCESSE O ÁUDIO (na URL) e retorne APENAS o JSON.
-
-FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
-{
-  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "audio_url": "${audioUrl}", "duration_s": "REAL_DURATION_IN_SECONDS", "parts": 1 },
-  "consentimentos": [],
-  "transcription_raw": "string completa da transcrição REAL do áudio",
-  "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
-  "mentions_alunos": [{"aluno_id": "string", "nome": "string", "context": "string", "confidence": "number"}],
-  "resumo_executivo": "string (Baseado na transcrição E no brain.json)",
-  "decisoes_sugeridas": [{"texto": "string", "responsavel_sugerido": "string", "prazo_sugerido_days": "number", "source_evidence": "string"}],
-  "itens_acao": [{"descricao": "string", "responsavel": "string", "prazo_days": "number", "prioridade": "string"}],
-  "dores_familia": [{"familia_nome": "string", "dor_texto": "string", "evidencia_texto": "string", "confidence": "number"}],
-  "dores_unidade": [{"dor_texto": "string", "impacto": "string", "evidencia": "string"}],
-  "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string", "evidencia": "string"}],
-  "audit_log": [{"action": "string", "by": "model|user", "timestamp": "${new Date().toISOString()}", "details": "string"}],
-  "requer_validacao_humana": true,
-  "sources": ["brain.json", "audio_input_real"]
-}
-        `;
-
-        const requestBody = {
-            "contents": [
-                {
-                    "parts": [
-                        { "text": textPrompt },
-                        {
-                            "fileData": { // <--- A v1beta aceita fileData
-                                "mimeType": mimeType,
-                                "fileUri": audioUrl
-                            }
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "response_mime_type": "application/json" // <--- A v1beta aceita snake_case
-            }
-        };
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Erro da API Gemini: ${errorData.error?.message || 'Erro desconhecido'}`);
-        }
-
-        const data = await response.json();
-        
-        if (!data.candidates || !data.candidates[0].content.parts[0].text) {
-             throw new Error('Resposta inesperada da API Gemini. O modelo pode não ter retornado texto.');
-        }
-
-        const text = data.candidates[0].content.parts[0].text;
-        
-        try {
-            const resultJson = JSON.parse(text);
-            
-            if (resultJson.erro) {
-                throw new Error(`IA reportou um erro: ${resultJson.erro}`);
-            }
-
-            return resultJson;
-
-        } catch (e) {
-            console.error('Erro ao parsear JSON do Gemini ou erro reportado pela IA:', e.message);
-            console.error('Texto retornado (esperava JSON):', text);
-            if (e.message.includes("IA reportou um erro:")) {
-                throw e;
-            }
-            throw new Error('O modelo retornou um JSON inválido ou uma resposta inesperada.');
-        }
-    },
+    // A função `callGeminiForAnalysis` foi REMOVIDA
     
     renderReport(reportData) {
+        // Agora esperamos um JSON, não uma string
         this.elements.reportContent.textContent = JSON.stringify(reportData, null, 2);
     },
     showReport() {
@@ -318,7 +256,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             this.elements.reportSection.classList.remove('hidden');
             this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
         } else {
-            alert('Nenhum relatório disponível. Processar o áudio primeiro.');
+            alert('Nenhum relatório disponível. Processe um áudio primeiro.');
         }
     },
     downloadReport() {
