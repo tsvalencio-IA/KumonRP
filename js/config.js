@@ -16,9 +16,9 @@ const firebaseConfig = {
 // --- Configuração do Cloudinary (PREENCHA ESTES VALORES) ---
 const cloudinaryConfig = {
     cloudName: "djtiaygrs",
-    uploadPreset: "kumon_ia" // Vamos criar este no próximo passo
+    uploadPreset: "kumon_ia" // Usado para anexos de boletim
 };
 
-// --- Configuração da GEMINI API (APENAS PARA FRONTEND - USO DEMO) ---
-// Esta é a chave do AI Studio que você gerou
-window.GEMINI_API_KEY = "AIzaSyBpme4fuJ4etdCtZjt1nkujEd1b4SKP-ww"; // Ex: "AIzaSy..."
+// --- Configuração da API de IA (REMOVIDA DO FRONTEND) ---
+// A lógica de IA agora roda no backend (Cloud Function)
+// window.GEMINI_API_KEY = "REMOVIDO_POR_SEGURANÇA"; 
