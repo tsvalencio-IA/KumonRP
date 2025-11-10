@@ -21,4 +21,4 @@ const cloudinaryConfig = {
 
 // --- ConfigURAÇÃO DA OPENAI API (NOVA ARQUITETURA) ---
 // AVISO: Esta chave será exposta no frontend.
-window.OPENAI_API_KEY = "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"; // Ex: "sk-..."
+window.OPENAI_API_KEY = "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"; // Ex: "sk-..."
