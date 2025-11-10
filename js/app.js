@@ -143,7 +143,7 @@ const App = {
         // Usar 'raw' permite que a IA busque o arquivo
         formData.append('resource_type', 'raw');
 
-        const response = await fetch(`https_://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
             method: 'POST',
             body: formData
         });
