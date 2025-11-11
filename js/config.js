@@ -23,4 +23,4 @@ const cloudinaryConfig = {
 // AVISO: Esta chave será exposta no frontend.
 // Crie esta chave em: https://aistudio.google.com/app/apikey
 // ATIVE A "Generative Language API" NO SEU PROJETO GOOGLE CLOUD
-window.GEMINI_API_KEY = "COLE_SUA_CHAVE_DA_API_GEMINI_AQUI"; // Ex: "AIza..."
+window.GEMINI_API_KEY = "AIzaSyDTKobrRmnPbolrBAMa42O3qsVvS5z6PxQ"; // Ex: "AIza..."
