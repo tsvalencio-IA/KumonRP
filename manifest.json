@@ -1,6 +1,6 @@
 {
   "name": "Plataforma de Diário de Reuniões Kumon",
-  "short_name": "Diário Kumon",
+  "short_name": "Kumon-IA",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
