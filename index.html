@@ -11,6 +11,7 @@
     <link href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 </head>
 <body id="app-page">
+    <!-- Tela de Login (Inalterada) -->
     <div id="login-screen" class="login-container">
         <h1 class="text-3xl font-bold text-cyan-400 mb-2 text-center">Central de Comando</h1>
         <p class="text-lg font-semibold text-white text-center">Kumon</p>
@@ -28,6 +29,7 @@
         </form>
     </div>
 
+    <!-- Container Principal da Aplicação -->
     <div id="app-container" class="container hidden">
         <header>
             <div class="header-content">
@@ -49,6 +51,7 @@
         </header>
 
         <main>
+            <!-- Módulo de Atualização do "Cérebro" (Inalterado) -->
             <fieldset id="brainModule">
                 <legend>🧠 Atualizar 'Cérebro' da IA</legend>
                 <div class="form-section">
@@ -59,6 +62,7 @@
                 </div>
             </fieldset>
 
+            <!-- MÓDULO DE REUNIÕES (Modificado para fluxo de 2 etapas) -->
             <fieldset id="meetingsModule">
                 <legend>Diário de Reuniões de Pais</legend>
                 
@@ -81,10 +85,27 @@
                 </div>
                 
                 <div class="button-container">
-                    <button id="processAudioBtn" class="btn" disabled>🤖 Processar Áudio com IA</button>
-                    <button id="viewReportBtn" class="btn">📊 Ver Relatório</button>
+                    <!-- ETAPA 1: Botão de Transcrição -->
+                    <button id="transcribeAudioBtn" class="btn" disabled>1. Transcrever Áudio (Whisper)</button>
                 </div>
             </fieldset>
+
+            <!-- NOVO MÓDULO: Transcrição e Análise (Aparece após a Etapa 1) -->
+            <fieldset id="transcriptionModule" class="section-box hidden">
+                <legend>🤖 Análise de Reunião</legend>
+                
+                <div class="form-section">
+                    <label for="transcriptionOutput">📄 Transcrição Gerada (Revise e edite se necessário)</label>
+                    <textarea id="transcriptionOutput" rows="10" placeholder="Aguardando transcrição do áudio..."></textarea>
+                </div>
+
+                <div class="button-container">
+                    <!-- ETAPA 2: Botão de Análise -->
+                    <button id="analyzeTranscriptionBtn" class="btn">2. Analisar Transcrição (GPT-4o)</button>
+                </div>
+            </fieldset>
+
+            <!-- Módulo de Gestão de Alunos (Inalterado) -->
             <fieldset id="studentsModule">
                 <legend>Gestão de Alunos Inteligente</legend>
                 <div class="students-header">
@@ -97,16 +118,18 @@
                     </div>
                 </div>
                 <div id="student-list" class="student-list">
-                    </div>
+                    <!-- Lista de alunos é renderizada pelo JS -->
+                </div>
             </fieldset>
 
+            <!-- Seção de Relatório (Agora populada pela Etapa 2) -->
             <section id="reportSection" class="section-box hidden">
-                <h2>🤖 Relatório de Reunião Gerado</h2>
+                <h2>📊 Relatório Final Gerado</h2>
                 <div id="reportContent" class="report-content">
                     <p>Relatório aparecerá aqui após processamento.</p>
                 </div>
                 <div class="button-container">
-                    <button id="downloadReportBtn" class="btn download-btn">Download Relatório</button>
+                    <button id="downloadReportBtn" class="btn download-btn">Download Relatório (.json)</button>
                 </div>
             </section>
         </main>
@@ -116,6 +139,7 @@
         </footer>
     </div>
 
+    <!-- Modal de Aluno (Inalterado) -->
     <div id="studentModal" class="modal-overlay hidden">
         <div class="modal-content">
             <div class="modal-header">
@@ -275,11 +299,13 @@
         </div>
     </div>
 
+    <!-- Scripts (Inalterados) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="https://upload-widget.cloudinary.com/global/all.js" type="text/javascript"></script> <script src="js/config.js"></script>
-    <script src="js/app.js"></script>
+    <script src="https://upload-widget.cloudinary.com/global/all.js" type="text-javascript"></script> 
+    <script src="js/config.js"></script>
+    <script src="js/app.js"></script> <!-- Este arquivo será atualizado -->
     <script src="js/auth.js"></script>
 </body>
 </html>
