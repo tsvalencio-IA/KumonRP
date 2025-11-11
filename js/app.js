@@ -1,6 +1,7 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
 // RE-ARQUITETADO PARA FLUXO DE 2 ETAPAS (100% GEMINI)
 // VERSÃO MELHORADA: Conecta aluno à reunião e melhora o prompt da IA
+// CORREÇÃO v3: Adiciona verificação de 'analysis.meta'
 const App = {
     state: {
         userId: null,
@@ -294,6 +295,15 @@ const App = {
             if (!this.state.students[studentId].meetingHistory) {
                 this.state.students[studentId].meetingHistory = [];
             }
+            
+            // =================================================================
+            // **CORREÇÃO DO BUG (analysis.meta undefined)**
+            // Garante que o objeto 'meta' exista antes de adicionar propriedades a ele
+            if (!analysis.meta) {
+                analysis.meta = {};
+            }
+            // =================================================================
+
             // Adiciona metadados ao relatório
             analysis.meta.meetingDate = this.elements.meetingDate.value || new Date().toISOString().split('T')[0];
             analysis.meta.studentId = studentId;
