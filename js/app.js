@@ -1,5 +1,5 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
-// RE-ARQUITETADO PARA FLUXO DE 2 ETAPAS (Transcrição -> Análise)
+// RE-ARQUITETADO PARA FLUXO DE 2 ETAPAS (100% GEMINI)
 const App = {
     state: {
         userId: null,
@@ -41,19 +41,19 @@ const App = {
             audioUpload: document.getElementById('audioUpload'),
             audioFileName: document.getElementById('audioFileName'),
             additionalNotes: document.getElementById('additionalNotes'),
-            transcribeAudioBtn: document.getElementById('transcribeAudioBtn'), // Alterado
+            transcribeAudioBtn: document.getElementById('transcribeAudioBtn'),
             
             // Módulo de Transcrição (Etapa 2: Análise)
-            transcriptionModule: document.getElementById('transcriptionModule'), // Novo
-            transcriptionOutput: document.getElementById('transcriptionOutput'), // Novo
-            analyzeTranscriptionBtn: document.getElementById('analyzeTranscriptionBtn'), // Novo
+            transcriptionModule: document.getElementById('transcriptionModule'),
+            transcriptionOutput: document.getElementById('transcriptionOutput'),
+            analyzeTranscriptionBtn: document.getElementById('analyzeTranscriptionBtn'),
 
             // Relatórios
             reportSection: document.getElementById('reportSection'),
             reportContent: document.getElementById('reportContent'),
             downloadReportBtn: document.getElementById('downloadReportBtn'),
             
-            // Módulo de Alunos (Inalterado)
+            // Módulo de Alunos
             addStudentBtn: document.getElementById('addStudentBtn'),
             studentSearch: document.getElementById('studentSearch'),
             studentList: document.getElementById('student-list'),
@@ -84,17 +84,17 @@ const App = {
         this.elements.logoutButton.addEventListener('click', () => firebase.auth().signOut());
         this.elements.systemOptionsBtn.addEventListener('click', () => this.promptForReset());
         
-        // Diário de Reuniões (Novo Fluxo)
+        // Diário de Reuniões (Novo Fluxo Gemini)
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
-        this.elements.transcribeAudioBtn.addEventListener('click', () => this.transcribeAudio()); // ETAPA 1
-        this.elements.analyzeTranscriptionBtn.addEventListener('click', () => this.analyzeTranscriptionText()); // ETAPA 2
+        this.elements.transcribeAudioBtn.addEventListener('click', () => this.transcribeAudioGemini()); // ETAPA 1
+        this.elements.analyzeTranscriptionBtn.addEventListener('click', () => this.analyzeTranscriptionGemini()); // ETAPA 2
         
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
         
         // Módulo Brain
         this.elements.uploadBrainFileBtn.addEventListener('click', () => this.handleBrainFileUpload());
         
-        // Alunos (Inalterado)
+        // Alunos
         this.elements.addStudentBtn.addEventListener('click', () => this.openStudentModal());
         this.elements.studentSearch.addEventListener('input', () => this.renderStudentList());
         this.elements.closeModalBtn.addEventListener('click', () => this.closeStudentModal());
@@ -126,14 +126,27 @@ const App = {
     },
 
     // =====================================================================
-    // ================== NOVA ARQUITETURA DE IA (2 Etapas) ================
+    // ================== NOVA ARQUITETURA DE IA (GEMINI) ================
     // =====================================================================
 
     /**
-     * ETAPA 1: Transcrever o Áudio usando a API Whisper da OpenAI.
+     * Helper para converter um Arquivo (File) em string Base64
      */
-    async transcribeAudio() {
-        this.elements.transcriptionOutput.value = 'Processando áudio com IA (Whisper)...';
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            // Extrai apenas o dado Base64, removendo o prefixo "data:mime/type;base64,"
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
+        });
+    },
+
+    /**
+     * ETAPA 1: Transcrever o Áudio usando a API Gemini (Flash).
+     */
+    async transcribeAudioGemini() {
+        this.elements.transcriptionOutput.value = 'Processando áudio com IA (Gemini)...';
         this.elements.transcriptionOutput.style.color = 'inherit';
         this.elements.transcriptionModule.classList.remove('hidden');
         this.elements.transcriptionModule.scrollIntoView({ behavior: 'smooth' });
@@ -142,11 +155,21 @@ const App = {
             if (!this.state.audioFile) {
                 throw new Error('Nenhum áudio encontrado. Envie um arquivo primeiro.');
             }
-            if (!window.OPENAI_API_KEY) {
-                throw new Error('OPENAI_API_KEY não encontrada em js/config.js.');
+            if (!window.GEMINI_API_KEY || window.GEMINI_API_KEY === "COLE_SUA_CHAVE_DA_API_GEMINI_AQUI") {
+                throw new Error('GEMINI_API_KEY não encontrada ou não configurada em js/config.js.');
             }
 
-            const transcriptionText = await this.callOpenAIForTranscription(this.state.audioFile);
+            const mimeType = this.state.audioFile.type;
+            // Gemini aceita uma variedade de tipos, ex: audio/ogg, audio/mpeg, audio/wav
+            if (!mimeType.startsWith('audio/')) {
+                throw new Error(`Tipo de arquivo não suportado: ${mimeType}. Use um formato de áudio padrão.`);
+            }
+
+            this.elements.transcriptionOutput.value = 'Convertendo áudio para Base64 (pode demorar)...';
+            const base64Data = await this.fileToBase64(this.state.audioFile);
+            
+            this.elements.transcriptionOutput.value = 'Enviando áudio para IA (Gemini Transcrição)...';
+            const transcriptionText = await this.callGeminiForTranscription(base64Data, mimeType);
             
             this.elements.transcriptionOutput.value = transcriptionText;
 
@@ -158,62 +181,85 @@ const App = {
 
         } catch (error) {
             console.error('Erro ao transcrever áudio:', error);
-            this.elements.transcriptionOutput.value = `Erro ao transcrever áudio: ${error.message}\n\nO erro 401 (Unauthorized) pode significar que a chave API está incorreta ou que o faturamento não está ativo para a API de Áudio.`;
+            this.elements.transcriptionOutput.value = `Erro ao transcrever áudio: ${error.message}\n\nVerifique se a GEMINI_API_KEY está correta e se a API "Generative Language" está ativada (e com faturamento) no seu projeto Google Cloud.`;
             this.elements.transcriptionOutput.style.color = 'red';
         }
     },
 
     /**
-     * Função HELPER para chamar o endpoint /audio/transcriptions (Whisper)
+     * Função HELPER para chamar o Gemini com dados de áudio (Etapa 1)
      */
-    async callOpenAIForTranscription(audioFile) {
-        const API_URL = "https://api.openai.com/v1/audio/transcriptions";
+    async callGeminiForTranscription(base64Data, mimeType) {
+        // Usando gemini-2.5-flash-preview-09-2025 que é otimizado para áudio e visão
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
         
-        const formData = new FormData();
-        formData.append('file', audioFile);
-        formData.append('model', 'whisper-1');
-        formData.append('language', 'pt'); // Força a transcrição em Português
-        formData.append('response_format', 'text'); // Pede texto puro
+        const requestBody = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        // 1. O Prompt de Texto
+                        { "text": "Transcreva este áudio em português. Retorne apenas o texto puro da transcrição, sem nenhuma formatação, cabeçalhos ou texto adicional." },
+                        // 2. O Áudio em Base64
+                        {
+                            "inlineData": {
+                                "mimeType": mimeType,
+                                "data": base64Data
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
 
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${window.OPENAI_API_KEY}`
-                // Não defina 'Content-Type' ao usar FormData, o browser faz isso.
-            },
-            body: formData
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Erro da API OpenAI (Whisper): ${errorData.error?.message || 'Erro desconhecido'}`);
+            throw new Error(`Erro da API Gemini (Transcrição): ${errorData.error?.message || 'Erro desconhecido'}`);
         }
 
-        const transcription = await response.text();
-        return transcription;
+        const data = await response.json();
+        
+        // Verifica se a resposta foi bloqueada ou não tem conteúdo
+        if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
+             if (data.promptFeedback && data.promptFeedback.blockReason) {
+                throw new Error(`Áudio bloqueado pela API Gemini. Motivo: ${data.promptFeedback.blockReason}`);
+            }
+            throw new Error('Resposta inesperada da API Gemini (Transcrição). O áudio pode ser inaudível ou estar vazio.');
+        }
+
+        return data.candidates[0].content.parts[0].text;
     },
 
     /**
-     * ETAPA 2: Analisar o Texto da Transcrição usando GPT-4o.
+     * ETAPA 2: Analisar o Texto da Transcrição usando Gemini.
      */
-    async analyzeTranscriptionText() {
+    async analyzeTranscriptionGemini() {
         const transcriptionText = this.elements.transcriptionOutput.value;
         if (!transcriptionText || transcriptionText.startsWith('Erro ao transcrever')) {
             alert('Não há transcrição válida para analisar.');
             return;
         }
 
-        this.elements.reportContent.textContent = 'Analisando transcrição com IA (GPT-4o)...';
+        this.elements.reportContent.textContent = 'Analisando transcrição com IA (Gemini Análise)...';
         this.elements.reportContent.style.color = 'inherit';
         this.elements.reportSection.classList.remove('hidden');
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
 
         try {
-            // Obter brain.json do Firebase (Contexto)
+            if (!window.GEMINI_API_KEY || window.GEMINI_API_KEY === "COLE_SUA_CHAVE_DA_API_GEMINI_AQUI") {
+                throw new Error('GEMINI_API_KEY não encontrada ou não configurada em js/config.js.');
+            }
+
             const brainData = await this.fetchBrainData();
 
-            // Chamar a API da OpenAI (GPT-4o) com o TEXTO
-            const analysis = await this.callOpenAIForAnalysis(transcriptionText, brainData || {});
+            // Chamar a API Gemini com o TEXTO e modo JSON
+            const analysis = await this.callGeminiForAnalysis(transcriptionText, brainData || {});
 
             // Salvar relatório no estado e exibir
             this.state.reportData = analysis;
@@ -227,16 +273,14 @@ const App = {
     },
 
     /**
-     * Função HELPER (Modificada) para chamar o endpoint /chat/completions (GPT-4o)
+     * Função HELPER (Modificada) para chamar o Gemini com texto e modo JSON (Etapa 2)
      */
-    async callOpenAIForAnalysis(transcriptionText, brainData) {
-        if (!window.OPENAI_API_KEY) {
-            throw new Error('OPENAI_API_KEY não encontrada em js/config.js.');
-        }
-
-        const API_URL = "https://api.openai.com/v1/chat/completions";
+    async callGeminiForAnalysis(transcriptionText, brainData) {
+        // Usamos o gemini-2.5-flash-preview-09-2025 pois ele suporta responseSchema (modo JSON)
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
         
-        // PROMPT ATUALIZADO PARA RECEBER TEXTO, NÃO ÁUDIO
+        // PROMPT ATUALIZADO PARA RECEBER TEXTO
+        // Este prompt define as regras de negócio e a persona.
         const textPrompt = `
 Você é uma assistente sênior de análise do Método Kumon, com muitos anos de experiência. Sua tarefa é analisar a TRANSCRIÇÃO de uma reunião (fornecida abaixo) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
@@ -251,72 +295,152 @@ ${transcriptionText}
 CONTEXTO (brain.json - Usar apenas para identificar alunos e estágios):
 ${JSON.stringify(brainData, null, 2)}
 
-PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON.
+PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema definido.
 
-FORMATO JSON OBRIGATÓRIO:
-{
-  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "source": "transcription_text" },
-  "mentions_alunos": [{"aluno_id": "string (do brain.json)", "nome": "string (do brain.json)", "context": "string (evidência da transcrição)", "confidence": "number"}],
-  "resumo_executivo": "string (Resumo FIEL E VERDADEIRO do que foi dito na transcrição)",
-  "decisoes_sugeridas": [{"texto": "string (Baseado na transcrição)", "responsavel_sugerido": "string", "prazo_sugerido_days": "number", "source_evidence": "string (Citação da transcrição)"}],
-  "itens_acao": [{"descricao": "string (Ação clara definida na transcrição)", "responsavel": "string", "prazo_days": "number", "prioridade": "string"}],
-  "dores_familia": [{"familia_nome": "string (Identificada na transcrição/brain)", "dor_texto": "string (PROBLEMA REAL dito na transcrição)", "evidencia_texto": "string (Citação exata da transcrição)", "confidence": "number"}],
-  "dores_unidade": [{"dor_texto": "string (Problema da unidade mencionado na transcrição)", "impacto": "string", "evidencia": "string (Citação da transcrição)"}],
-  "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string (Baseado na transcrição E no método Kumon)", "evidencia": "string (Citação da transcrição)"}],
-  "audit_log": [{"action": "analysis_complete", "by": "model", "timestamp": "${new Date().toISOString()}", "details": "Análise de transcrição concluída."}],
-  "requer_validacao_humana": true,
-  "sources": ["brain.json", "transcription_text"]
-}
-        `;
+`;
+
+        // DEFINIR O SCHEMA DE SAÍDA PARA O GEMINI
+        // Este schema é baseado no seu prompt original para a OpenAI
+        const responseSchema = {
+            type: "OBJECT",
+            properties: {
+                "meta": { 
+                    type: "OBJECT",
+                    properties: {
+                        "created_at": { type: "STRING" },
+                        "sala_id": { type: "STRING" },
+                        "source": { type: "STRING" }
+                    }
+                },
+                "mentions_alunos": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "aluno_id": { type: "STRING" },
+                            "nome": { type: "STRING" },
+                            "context": { type: "STRING" },
+                            "confidence": { type: "NUMBER" }
+                        }
+                    } 
+                },
+                "resumo_executivo": { type: "STRING" },
+                "decisoes_sugeridas": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "texto": { type: "STRING" },
+                            "responsavel_sugerido": { type: "STRING" },
+                            "prazo_sugerido_days": { type: "NUMBER" },
+                            "source_evidence": { type: "STRING" }
+                        }
+                    } 
+                },
+                "itens_acao": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "descricao": { type: "STRING" },
+                            "responsavel": { type: "STRING" },
+                            "prazo_days": { type: "NUMBER" },
+                            "prioridade": { type: "STRING" }
+                        }
+                    } 
+                },
+                "dores_familia": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "familia_nome": { type: "STRING" },
+                            "dor_texto": { type: "STRING" },
+                            "evidencia_texto": { type: "STRING" },
+                            "confidence": { type: "NUMBER" }
+                        }
+                    } 
+                },
+                "dores_unidade": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "dor_texto": { type: "STRING" },
+                            "impacto": { type: "STRING" },
+                            "evidencia": { type: "STRING" }
+                        }
+                    } 
+                },
+                "recomendacoes": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "tipo": { type: "STRING" },
+                            "acao": { type: "STRING" },
+                            "justificativa": { type: "STRING" },
+                            "evidencia": { type: "STRING" }
+                        }
+                    } 
+                },
+                "audit_log": { 
+                    type: "ARRAY", 
+                    items: { 
+                        type: "OBJECT",
+                        properties: {
+                            "action": { type: "STRING" },
+                            "by": { type: "STRING" },
+                            "timestamp": { type: "STRING" },
+                            "details": { type: "STRING" }
+                        }
+                    } 
+                },
+                "requer_validacao_humana": { type: "BOOLEAN" },
+                "sources": { type: "ARRAY", items: { type: "STRING" } }
+            },
+            // Definindo quais campos são obrigatórios (ajuste conforme necessário)
+            required: ["meta", "resumo_executivo", "dores_familia", "recomendacoes", "requer_validacao_humana"]
+        };
 
         const requestBody = {
-            "model": "gpt-4o",
-            "response_format": { "type": "json_object" }, // Pede JSON diretamente
-            "messages": [
-                {
-                    "role": "user",
-                    "content": textPrompt // Envia apenas o prompt de texto
-                }
-            ]
+            "contents": [{ "parts": [{ "text": textPrompt }] }],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseSchema": responseSchema
+            }
         };
 
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.OPENAI_API_KEY}`
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Erro da API OpenAI (GPT-4o): ${errorData.error?.message || 'Erro desconhecido'}`);
+            throw new Error(`Erro da API Gemini (Análise): ${errorData.error?.message || 'Erro desconhecido'}`);
         }
 
         const data = await response.json();
         
-        if (!data.choices || !data.choices[0].message.content) {
-             throw new Error('Resposta inesperada da API OpenAI.');
+        // Verifica se a resposta foi bloqueada ou não tem conteúdo
+        if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
+             if (data.promptFeedback && data.promptFeedback.blockReason) {
+                throw new Error(`Análise bloqueada pela API Gemini. Motivo: ${data.promptFeedback.blockReason}`);
+            }
+            throw new Error('Resposta inesperada da API Gemini (Análise).');
         }
 
-        const text = data.choices[0].message.content;
+        const text = data.candidates[0].content.parts[0].text;
         
         try {
+            // O Gemini retorna o JSON como uma string de texto
             const resultJson = JSON.parse(text);
-            
-            if (resultJson.erro) {
-                throw new Error(`IA reportou um erro: ${resultJson.erro}`);
-            }
-
             return resultJson;
-
         } catch (e) {
-            console.error('Erro ao parsear JSON da OpenAI ou erro reportado pela IA:', e.message);
+            console.error('Erro ao parsear JSON da Gemini:', e.message);
             console.error('Texto retornado (esperava JSON):', text);
-            if (e.message.includes("IA reportou um erro:")) {
-                throw e;
-            }
             throw new Error('O modelo retornou um JSON inválido ou uma resposta inesperada.');
         }
     },
@@ -738,8 +862,8 @@ FORMATO JSON OBRIGATÓRIO:
             if (entryDateStr.includes('T')) {
                 date = new Date(entryDateStr).toLocaleDateString('pt-BR');
             } else if (entryDateStr.includes('-')) {
-                const parts = entryDateStr.split('-');
                 // Constrói como UTC para evitar problemas de fuso horário
+                const parts = entryDateStr.split('-');
                 const localDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
                 date = localDate.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
             }
@@ -848,7 +972,7 @@ ${'='.repeat(50)}
                 hasInsights = true;
             }
             
-            analysis += `💡 SUGESTÃO ESTRATÉGICA:
+            analysis += `💡 SUGESTÃO ESTRATÉGGICA:
 `;
             if (repetitions.length >= 3 && lowGrades.length > 0) {
                 analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
