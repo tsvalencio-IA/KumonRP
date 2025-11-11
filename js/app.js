@@ -1,5 +1,6 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
 // RE-ARQUITETADO PARA FLUXO DE 2 ETAPAS (100% GEMINI)
+// VERSÃO MELHORADA: Conecta aluno à reunião e melhora o prompt da IA
 const App = {
     state: {
         userId: null,
@@ -27,7 +28,7 @@ const App = {
         document.getElementById('userEmail').textContent = user.email;
         this.mapDOMElements();
         this.addEventListeners();
-        this.loadStudents();
+        this.loadStudents(); // Agora também popula o dropdown de reuniões
     },
 
     mapDOMElements() {
@@ -38,6 +39,7 @@ const App = {
             
             // Diário de Reuniões (Etapa 1: Upload)
             meetingDate: document.getElementById('meetingDate'),
+            meetingStudentSelect: document.getElementById('meetingStudentSelect'), // **NOVO**
             audioUpload: document.getElementById('audioUpload'),
             audioFileName: document.getElementById('audioFileName'),
             additionalNotes: document.getElementById('additionalNotes'),
@@ -64,7 +66,7 @@ const App = {
             studentIdInput: document.getElementById('studentId'),
             saveStudentBtn: document.getElementById('saveStudentBtn'),
             deleteStudentBtn: document.getElementById('deleteStudentBtn'),
-            refreshAnalysisBtn: document.getElementById('refreshAnalysisBtn'),
+            // refreshAnalysisBtn: document.getElementById('refreshAnalysisBtn'), // **REMOVIDO**
             programmingForm: document.getElementById('programmingForm'),
             reportForm: document.getElementById('reportForm'),
             performanceForm: document.getElementById('performanceForm'),
@@ -86,6 +88,7 @@ const App = {
         
         // Diário de Reuniões (Novo Fluxo Gemini)
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
+        this.elements.meetingStudentSelect.addEventListener('change', () => this.handleFileUpload()); // **NOVO**
         this.elements.transcribeAudioBtn.addEventListener('click', () => this.transcribeAudioGemini()); // ETAPA 1
         this.elements.analyzeTranscriptionBtn.addEventListener('click', () => this.analyzeTranscriptionGemini()); // ETAPA 2
         
@@ -100,7 +103,7 @@ const App = {
         this.elements.closeModalBtn.addEventListener('click', () => this.closeStudentModal());
         this.elements.saveStudentBtn.addEventListener('click', () => this.saveStudent());
         this.elements.deleteStudentBtn.addEventListener('click', () => this.deleteStudent());
-        this.elements.refreshAnalysisBtn.addEventListener('click', () => this.analyzeStudent(this.state.currentStudentId));
+        // this.elements.refreshAnalysisBtn.addEventListener('click', () => this.analyzeStudent(this.state.currentStudentId)); // **REMOVIDO**
         document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab)));
         this.elements.programmingForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'programmingHistory', this.elements.programmingForm));
         this.elements.reportForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'reportHistory', this.elements.reportForm));
@@ -114,13 +117,21 @@ const App = {
 
     handleFileUpload() {
         const file = this.elements.audioUpload.files[0];
+        const studentSelected = this.elements.meetingStudentSelect.value;
+
         if (file) {
             this.state.audioFile = file; // Salva o arquivo do upload
             this.elements.audioFileName.textContent = `Arquivo selecionado: ${file.name}`;
-            this.elements.transcribeAudioBtn.disabled = false;
         } else {
             this.state.audioFile = null;
             this.elements.audioFileName.textContent = '';
+        }
+
+        // **LÓGICA ATUALIZADA**
+        // Só ativa o botão se AMBOS estiverem preenchidos
+        if (this.state.audioFile && studentSelected) {
+            this.elements.transcribeAudioBtn.disabled = false;
+        } else {
             this.elements.transcribeAudioBtn.disabled = true;
         }
     },
@@ -130,26 +141,33 @@ const App = {
     // =====================================================================
 
     /**
-     * Helper para converter um Arquivo (File) em string Base64
+     * Helper para converter um Arquivo (File) em string Base64 (Inalterado)
      */
     fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            // Extrai apenas o dado Base64, removendo o prefixo "data:mime/type;base64,"
             reader.onload = () => resolve(reader.result.split(',')[1]);
             reader.onerror = error => reject(error);
         });
     },
 
     /**
-     * ETAPA 1: Transcrever o Áudio usando a API Gemini (Flash).
+     * ETAPA 1: Transcrever o Áudio (Lógica principal inalterada)
      */
     async transcribeAudioGemini() {
         this.elements.transcriptionOutput.value = 'Processando áudio com IA (Gemini)...';
         this.elements.transcriptionOutput.style.color = 'inherit';
         this.elements.transcriptionModule.classList.remove('hidden');
         this.elements.transcriptionModule.scrollIntoView({ behavior: 'smooth' });
+
+        // **NOVA VERIFICAÇÃO**
+        const studentId = this.elements.meetingStudentSelect.value;
+        if (!studentId) {
+             alert('Erro: Nenhum aluno foi selecionado para esta reunião.');
+             this.elements.transcriptionModule.classList.add('hidden');
+             return;
+        }
 
         try {
             if (!this.state.audioFile) {
@@ -160,7 +178,6 @@ const App = {
             }
 
             const mimeType = this.state.audioFile.type;
-            // Gemini aceita uma variedade de tipos, ex: audio/ogg, audio/mpeg, audio/wav
             if (!mimeType.startsWith('audio/')) {
                 throw new Error(`Tipo de arquivo não suportado: ${mimeType}. Use um formato de áudio padrão.`);
             }
@@ -173,12 +190,6 @@ const App = {
             
             this.elements.transcriptionOutput.value = transcriptionText;
 
-            // Limpa o áudio após o processamento
-            this.state.audioFile = null;
-            this.elements.audioUpload.value = null;
-            this.elements.audioFileName.textContent = "";
-            this.elements.transcribeAudioBtn.disabled = true;
-
         } catch (error) {
             console.error('Erro ao transcrever áudio:', error);
             this.elements.transcriptionOutput.value = `Erro ao transcrever áudio: ${error.message}\n\nVerifique se a GEMINI_API_KEY está correta e se a API "Generative Language" está ativada (e com faturamento) no seu projeto Google Cloud.`;
@@ -187,10 +198,9 @@ const App = {
     },
 
     /**
-     * Função HELPER para chamar o Gemini com dados de áudio (Etapa 1)
+     * Função HELPER para chamar o Gemini com dados de áudio (Etapa 1 - Inalterada)
      */
     async callGeminiForTranscription(base64Data, mimeType) {
-        // Usando gemini-2.5-flash-preview-09-2025 que é otimizado para áudio e visão
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
         
         const requestBody = {
@@ -198,9 +208,7 @@ const App = {
                 {
                     "role": "user",
                     "parts": [
-                        // 1. O Prompt de Texto
                         { "text": "Transcreva este áudio em português. Retorne apenas o texto puro da transcrição, sem nenhuma formatação, cabeçalhos ou texto adicional." },
-                        // 2. O Áudio em Base64
                         {
                             "inlineData": {
                                 "mimeType": mimeType,
@@ -225,7 +233,6 @@ const App = {
 
         const data = await response.json();
         
-        // Verifica se a resposta foi bloqueada ou não tem conteúdo
         if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
              if (data.promptFeedback && data.promptFeedback.blockReason) {
                 throw new Error(`Áudio bloqueado pela API Gemini. Motivo: ${data.promptFeedback.blockReason}`);
@@ -237,7 +244,7 @@ const App = {
     },
 
     /**
-     * ETAPA 2: Analisar o Texto da Transcrição usando Gemini.
+     * ETAPA 2: Analisar o Texto da Transcrição (Lógica de salvamento ATUALIZADA)
      */
     async analyzeTranscriptionGemini() {
         const transcriptionText = this.elements.transcriptionOutput.value;
@@ -246,7 +253,19 @@ const App = {
             return;
         }
 
-        this.elements.reportContent.textContent = 'Analisando transcrição com IA (Gemini Análise)...';
+        // **BUSCA O ALUNO SELECIONADO**
+        const studentId = this.elements.meetingStudentSelect.value;
+        if (!studentId) {
+            alert('Erro: Nenhum aluno está selecionado para esta análise.');
+            return;
+        }
+        const studentData = this.state.students[studentId];
+        if (!studentData) {
+            alert('Erro: Não foi possível encontrar os dados do aluno selecionado.');
+            return;
+        }
+
+        this.elements.reportContent.textContent = `Analisando transcrição para o aluno ${studentData.name}...`;
         this.elements.reportContent.style.color = 'inherit';
         this.elements.reportSection.classList.remove('hidden');
         this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
@@ -258,12 +277,43 @@ const App = {
 
             const brainData = await this.fetchBrainData();
 
-            // Chamar a API Gemini com o TEXTO e modo JSON
-            const analysis = await this.callGeminiForAnalysis(transcriptionText, brainData || {});
+            // **CHAMADA ATUALIZADA**
+            // Agora enviamos a transcrição, o cérebro geral E os dados específicos do aluno
+            const analysis = await this.callGeminiForAnalysis(transcriptionText, brainData || {}, studentData);
 
-            // Salvar relatório no estado e exibir
+            // Se a IA retornou um erro (como "não é sobre Kumon"), mostre-o
+            if (analysis.erro) {
+                throw new Error(`Análise da IA falhou: ${analysis.erro}`);
+            }
+
+            // Salvar relatório no estado (para download)
             this.state.reportData = analysis;
             this.renderReport(analysis);
+
+            // **NOVA LÓGICA: SALVAR RELATÓRIO NO ALUNO**
+            if (!this.state.students[studentId].meetingHistory) {
+                this.state.students[studentId].meetingHistory = [];
+            }
+            // Adiciona metadados ao relatório
+            analysis.meta.meetingDate = this.elements.meetingDate.value || new Date().toISOString().split('T')[0];
+            analysis.meta.studentId = studentId;
+            analysis.meta.studentName = studentData.name;
+
+            this.state.students[studentId].meetingHistory.push(analysis);
+            
+            // Salva o aluno (com o novo relatório) no Firebase
+            await this.setData('alunos/lista_alunos', { students: this.state.students });
+
+            alert(`Análise concluída e salva no histórico do aluno: ${studentData.name}`);
+
+            // Limpa os campos da reunião
+            this.elements.transcriptionOutput.value = "";
+            this.elements.transcriptionModule.classList.add('hidden');
+            this.elements.meetingStudentSelect.value = "";
+            this.elements.audioUpload.value = null;
+            this.elements.audioFileName.textContent = "";
+            this.elements.transcribeAudioBtn.disabled = true;
+
 
         } catch (error) {
             console.error('Erro ao analisar transcrição:', error);
@@ -273,55 +323,48 @@ const App = {
     },
 
     /**
-     * Função HELPER (Modificada) para chamar o Gemini com texto e modo JSON (Etapa 2)
+     * Função HELPER (Modificada) para chamar o Gemini com o "CÉREBRO KUMON"
      */
-    async callGeminiForAnalysis(transcriptionText, brainData) {
-        // Usamos o gemini-2.5-flash-preview-09-2025 pois ele suporta responseSchema (modo JSON)
+    async callGeminiForAnalysis(transcriptionText, brainData, studentData) {
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
         
-        // PROMPT ATUALIZADO PARA RECEBER TEXTO
-        // Este prompt define as regras de negócio e a persona.
+        // **PROMPT 100% ATUALIZADO**
         const textPrompt = `
-Você é uma assistente sênior de análise do Método Kumon, com muitos anos de experiência. Sua tarefa é analisar a TRANSCRIÇÃO de uma reunião (fornecida abaixo) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
+Você é uma Orientadora-Chefe do Método Kumon, com 20 anos de experiência. Sua tarefa é analisar a TRANSCRIÇÃO de uma reunião de pais e o HISTÓRICO de um aluno específico, e retornar um JSON ESTRITO.
 
 REGRA DE OURO (NÃO QUEBRE JAMAIS):
-A IA JAMAIS PODE CRIAR, INVENTAR OU SE ALUCINAR. Tudo que for gerado deve ser 100% com a verdade baseada na transcrição. O "brain.json" serve apenas para IDENTIFICAR alunos e fornecer contexto, NUNCA para inventar fatos sobre a reunião. A vida de pessoas está em jogo. Somente a VERDADE é permitida.
+1.  **VERDADE ABSOLUTA:** A IA JAMAIS PODE CRIAR, INVENTAR OU ALUCINAR. Tudo que for gerado deve ser 100% com a verdade baseada na TRANSCRIÇÃO e nos DADOS DO ALUNO. A vida de pessoas está em jogo. Somente a VERDADE é permitida.
+2.  **FILTRO KUMON (IMPORTANTE):** Você DEVE analisar a transcrição. Se o áudio não for sobre um aluno, pais, dificuldades, boletins, ou o método Kumon, você DEVE retornar um JSON com um erro: {"erro": "A transcrição não parece ser sobre uma reunião do Kumon."}
+3.  **FOCO NO ALUNO:** A reunião é sobre o aluno cujos dados estão abaixo. Use o histórico de desempenho, programação e boletins dele para enriquecer sua análise e identificar a causa raiz dos problemas mencionados na transcrição.
 
-TRANSCRIÇÃO DA REUNIÃO (Fonte da Verdade):
 ---
+DADOS DO ALUNO (Contexto Específico da Análise):
+${JSON.stringify(studentData, null, 2)}
+---
+TRANSCRIÇÃO DA REUNIÃO (Fonte da Verdade Primária):
 ${transcriptionText}
 ---
-
-CONTEXTO (brain.json - Usar apenas para identificar alunos e estágios):
+DADOS GERAIS DA FRANQUIA (Contexto Geral - brain.json):
 ${JSON.stringify(brainData, null, 2)}
+---
 
-PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema definido.
-
+PROCESSE A TRANSCRIÇÃO e os DADOS DO ALUNO. Compare o que foi dito na reunião com o histórico do aluno. Retorne APENAS o JSON. O JSON deve seguir o schema definido.
 `;
 
-        // DEFINIR O SCHEMA DE SAÍDA PARA O GEMINI
-        // Este schema é baseado no seu prompt original para a OpenAI
+        // SCHEMA DE SAÍDA (Inalterado)
         const responseSchema = {
             type: "OBJECT",
             properties: {
+                "erro": { type: "STRING" }, // Campo para o Filtro Kumon
                 "meta": { 
                     type: "OBJECT",
-                    properties: {
-                        "created_at": { type: "STRING" },
-                        "sala_id": { type: "STRING" },
-                        "source": { type: "STRING" }
-                    }
+                    properties: { "created_at": { type: "STRING" }, "sala_id": { type: "STRING" }, "source": { type: "STRING" } }
                 },
                 "mentions_alunos": { 
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "aluno_id": { type: "STRING" },
-                            "nome": { type: "STRING" },
-                            "context": { type: "STRING" },
-                            "confidence": { type: "NUMBER" }
-                        }
+                        properties: { "aluno_id": { type: "STRING" }, "nome": { type: "STRING" }, "context": { type: "STRING" }, "confidence": { type: "NUMBER" } }
                     } 
                 },
                 "resumo_executivo": { type: "STRING" },
@@ -329,78 +372,47 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "texto": { type: "STRING" },
-                            "responsavel_sugerido": { type: "STRING" },
-                            "prazo_sugerido_days": { type: "NUMBER" },
-                            "source_evidence": { type: "STRING" }
-                        }
+                        properties: { "texto": { type: "STRING" }, "responsavel_sugerido": { type: "STRING" }, "prazo_sugerido_days": { type: "NUMBER" }, "source_evidence": { type: "STRING" } }
                     } 
                 },
                 "itens_acao": { 
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "descricao": { type: "STRING" },
-                            "responsavel": { type: "STRING" },
-                            "prazo_days": { type: "NUMBER" },
-                            "prioridade": { type: "STRING" }
-                        }
+                        properties: { "descricao": { type: "STRING" }, "responsavel": { type: "STRING" }, "prazo_days": { type: "NUMBER" }, "prioridade": { type: "STRING" } }
                     } 
                 },
                 "dores_familia": { 
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "familia_nome": { type: "STRING" },
-                            "dor_texto": { type: "STRING" },
-                            "evidencia_texto": { type: "STRING" },
-                            "confidence": { type: "NUMBER" }
-                        }
+                        properties: { "familia_nome": { type: "STRING" }, "dor_texto": { type: "STRING" }, "evidencia_texto": { type: "STRING" }, "confidence": { type: "NUMBER" } }
                     } 
                 },
                 "dores_unidade": { 
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "dor_texto": { type: "STRING" },
-                            "impacto": { type: "STRING" },
-                            "evidencia": { type: "STRING" }
-                        }
+                        properties: { "dor_texto": { type: "STRING" }, "impacto": { type: "STRING" }, "evidencia": { type: "STRING" } }
                     } 
                 },
                 "recomendacoes": { 
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "tipo": { type: "STRING" },
-                            "acao": { type: "STRING" },
-                            "justificativa": { type: "STRING" },
-                            "evidencia": { type: "STRING" }
-                        }
+                        properties: { "tipo": { type: "STRING" }, "acao": { type: "STRING" }, "justificativa": { type: "STRING" }, "evidencia": { type: "STRING" } }
                     } 
                 },
                 "audit_log": { 
                     type: "ARRAY", 
                     items: { 
                         type: "OBJECT",
-                        properties: {
-                            "action": { type: "STRING" },
-                            "by": { type: "STRING" },
-                            "timestamp": { type: "STRING" },
-                            "details": { type: "STRING" }
-                        }
+                        properties: { "action": { type: "STRING" }, "by": { type: "STRING" }, "timestamp": { type: "STRING" }, "details": { type: "STRING" } }
                     } 
                 },
                 "requer_validacao_humana": { type: "BOOLEAN" },
                 "sources": { type: "ARRAY", items: { type: "STRING" } }
-            },
-            // Definindo quais campos são obrigatórios (ajuste conforme necessário)
-            required: ["meta", "resumo_executivo", "dores_familia", "recomendacoes", "requer_validacao_humana"]
+            }
         };
 
         const requestBody = {
@@ -424,7 +436,6 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
 
         const data = await response.json();
         
-        // Verifica se a resposta foi bloqueada ou não tem conteúdo
         if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
              if (data.promptFeedback && data.promptFeedback.blockReason) {
                 throw new Error(`Análise bloqueada pela API Gemini. Motivo: ${data.promptFeedback.blockReason}`);
@@ -435,7 +446,6 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
         const text = data.candidates[0].content.parts[0].text;
         
         try {
-            // O Gemini retorna o JSON como uma string de texto
             const resultJson = JSON.parse(text);
             return resultJson;
         } catch (e) {
@@ -458,9 +468,8 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             alert('Nenhum relatório para download.');
             return;
         }
-
         const content = JSON.stringify(this.state.reportData, null, 2);
-        const filename = `Relatorio_Analise_${this.elements.meetingDate.value || new Date().toISOString().split('T')[0]}.json`;
+        const filename = `Relatorio_Analise_${new Date().toISOString().split('T')[0]}.json`;
         const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -517,13 +526,11 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             alert('Por favor, selecione um arquivo JSON para enviar.');
             return;
         }
-
         const file = fileInput.files[0];
         if (!file.name.toLowerCase().endsWith('.json')) {
             alert('Por favor, selecione um arquivo com extensão .json.');
             return;
         }
-
         try {
             const fileContent = await file.text();
             let newBrainData;
@@ -532,15 +539,11 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             } catch (e) {
                 throw new Error('O arquivo selecionado não é um JSON válido.');
             }
-
             let currentBrainData = await this.fetchBrainData();
             const mergedBrainData = this.deepMerge(currentBrainData, newBrainData);
-            
             await this.saveBrainData(mergedBrainData);
-
             alert('Arquivo JSON enviado e "brain.json" atualizado com sucesso no Firebase!');
             fileInput.value = '';
-
         } catch (error) {
             console.error('Erro ao processar o arquivo JSON:', error);
             alert(`Erro ao processar o arquivo: ${error.message}`);
@@ -578,15 +581,39 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             const data = await this.fetchData('alunos/lista_alunos');
             this.state.students = (data && data.students) ? data.students : {};
             this.renderStudentList();
+            
+            // **NOVO: POPULAR O DROPDOWN DE REUNIÕES**
+            this.populateMeetingStudentSelect();
+
         } catch (error) {
             console.error('Erro ao carregar alunos:', error);
             alert('Não foi possível carregar os dados dos alunos.');
         }
     },
 
+    // **NOVA FUNÇÃO**
+    populateMeetingStudentSelect() {
+        const select = this.elements.meetingStudentSelect;
+        if (!select) return;
+
+        // Limpa opções antigas, exceto a primeira (placeholder)
+        while (select.options.length > 1) {
+            select.remove(1);
+        }
+
+        const sortedStudents = Object.entries(this.state.students)
+            .sort(([, a], [, b]) => a.name.localeCompare(b.name));
+
+        for (const [id, student] of sortedStudents) {
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = student.name;
+            select.appendChild(option);
+        }
+    },
+
     renderStudentList() {
         const searchTerm = this.elements.studentSearch.value.toLowerCase();
-        
         const filteredStudents = Object.entries(this.state.students).filter(([id, student]) =>
             (student.name && student.name.toLowerCase().includes(searchTerm)) ||
             (student.responsible && student.responsible.toLowerCase().includes(searchTerm))
@@ -632,7 +659,17 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             document.getElementById('engStage').value = student.engStage || '';
             this.elements.deleteStudentBtn.style.display = 'block';
             this.loadStudentHistories(studentId); 
-            this.elements.studentAnalysisContent.textContent = 'Clique em "Gerar Nova Análise" para começar.';
+            
+            // **LÓGICA DA ABA DE ANÁLISE ATUALIZADA**
+            const analysisContent = this.elements.studentAnalysisContent;
+            if (student.meetingHistory && student.meetingHistory.length > 0) {
+                // Pega o último relatório salvo
+                const lastReport = student.meetingHistory[student.meetingHistory.length - 1];
+                analysisContent.textContent = JSON.stringify(lastReport, null, 2);
+            } else {
+                analysisContent.textContent = "Nenhum relatório de reunião (com IA) salvo para este aluno.";
+            }
+
         } else {
             this.elements.modalTitle.textContent = '👨‍🎓 Adicionar Novo Aluno';
             this.elements.studentIdInput.value = '';
@@ -670,9 +707,11 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             mathStage: document.getElementById('mathStage').value.trim(),
             portStage: document.getElementById('portStage').value.trim(),
             engStage: document.getElementById('engStage').value.trim(),
+            // Preserva os históricos existentes
             programmingHistory: this.state.students[studentId]?.programmingHistory || [],
             reportHistory: this.state.students[studentId]?.reportHistory || [],
             performanceLog: this.state.students[studentId]?.performanceLog || [],
+            meetingHistory: this.state.students[studentId]?.meetingHistory || [], // **NOVO**
             createdAt: this.state.students[studentId]?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
@@ -683,6 +722,8 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             await this.setData('alunos/lista_alunos', { students: this.state.students });
             
             this.renderStudentList();
+            this.populateMeetingStudentSelect(); // **NOVO** Atualiza o dropdown
+            
             if (!this.state.currentStudentId) {
                 this.state.currentStudentId = studentId;
                 this.elements.studentIdInput.value = studentId;
@@ -708,6 +749,7 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
         try {
             await this.setData('alunos/lista_alunos', { students: this.state.students });
             this.renderStudentList();
+            this.populateMeetingStudentSelect(); // **NOVO** Atualiza o dropdown
             this.closeStudentModal();
             
             await this.updateBrainFromStudents();
@@ -742,14 +784,15 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
                 estagio_matematica: student.mathStage,
                 estagio_portugues: student.portStage,
                 estagio_ingles: student.engStage,
-                historico: student.performanceLog || [],
+                historico_desempenho: student.performanceLog || [], // Renomeado para clareza no cérebro
+                historico_boletins: student.reportHistory || [], // **NOVO**
                 metas: updatedBrain.alunos[id]?.metas || {}, 
                 observacoes: updatedBrain.alunos[id]?.observacoes || [] 
             };
         }
         
         await this.saveBrainData(updatedBrain);
-        console.log("brain.json atualizado com base nos alunos da plataforma (Realtime DB).");
+        console.log("brain.json (contexto da IA) atualizado com base nos alunos (Realtime DB).");
     },
 
     loadStudentHistories(studentId) {
@@ -773,7 +816,7 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
     },
     
     // =====================================================================
-    // ================ CÓDIGO DE HISTÓRICO (SEM ALTERAÇÕES) ===============
+    // ================ CÓDIGO DE HISTÓRICO (Inalterado) ===============
     // =====================================================================
     async addHistoryEntry(event, historyType, formElement) {
         event.preventDefault();
@@ -825,7 +868,8 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             
             this.renderHistory(historyType, this.state.students[this.state.currentStudentId][historyType]);
             formElement.reset();
-            await this.updateBrainFromStudents();
+            // Atualiza o cérebro da IA com os novos dados
+            await this.updateBrainFromStudents(); 
         } catch (error) {
             console.error('Erro ao salvar histórico:', error);
             alert('Falha ao salvar o registro.');
@@ -854,7 +898,6 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
 
     createHistoryItemHTML(type, entry) {
         let detailsHTML = '';
-        
         const entryDateStr = entry.date || entry.createdAt;
         let date = 'Data Inválida';
 
@@ -862,7 +905,6 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
             if (entryDateStr.includes('T')) {
                 date = new Date(entryDateStr).toLocaleDateString('pt-BR');
             } else if (entryDateStr.includes('-')) {
-                // Constrói como UTC para evitar problemas de fuso horário
                 const parts = entryDateStr.split('-');
                 const localDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
                 date = localDate.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
@@ -901,7 +943,8 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
         try {
             await this.setData('alunos/lista_alunos', { students: this.state.students });
             this.renderHistory(historyType, student[historyType]);
-            await this.updateBrainFromStudents();
+            // Atualiza o cérebro da IA
+            await this.updateBrainFromStudents(); 
         } catch (error) {
             alert('Falha ao excluir o registro.');
             console.error(error);
@@ -909,89 +952,10 @@ PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON. O JSON deve seguir o schema de
         }
     },
     
-    // Esta análise é um placeholder local, não usa IA. (Inalterado)
-    async analyzeStudent(studentId) {
-        if (!studentId) return;
-        const analysisContent = this.elements.studentAnalysisContent;
-        analysisContent.textContent = 'Analisando dados do aluno...';
-        const student = this.state.students[studentId];
-        if (!student) {
-            analysisContent.textContent = 'Erro: Dados do aluno não encontrados.';
-            return;
-        }
-        
-        const performanceLog = Array.isArray(student.performanceLog) ? student.performanceLog : Object.values(student.performanceLog || {});
-        const reportHistory = Array.isArray(student.reportHistory) ? student.reportHistory : Object.values(student.reportHistory || {});
-        const programmingHistory = Array.isArray(student.programmingHistory) ? student.programmingHistory : Object.values(student.programmingHistory || {});
-        
-        const totalHistoryEntries = performanceLog.length + reportHistory.length + programmingHistory.length;
+    // **FUNÇÃO ANTIGA REMOVIDA** (analyzeStudent)
+    // A lógica agora está na aba "Última Análise (Reunião)" dentro do openStudentModal
 
-        let analysis = `ANÁLISE INTELIGENTE - ${student.name}
-${'='.repeat(50)}
-`;
-        let hasInsights = false;
-        
-        if (totalHistoryEntries < 2) {
-            analysis += `💡 DADOS INSUFICIENTES:
-   Ainda não há histórico suficiente para gerar uma análise de tendências.
-   
-   AÇÃO: Continue registrando o desempenho, programação e boletins do aluno.
-`;
-        } else {
-            const repetitions = performanceLog.filter(e => e.type === 'REPETICAO');
-            if (repetitions.length >= 3) {
-                analysis += `🚨 ALERTA DE PLATÔ: ${repetitions.length} repetições registradas.
-   AÇÃO: Revisar material e agendar orientação individual.
-`;
-                hasInsights = true;
-            } else if (repetitions.length > 0) {
-                analysis += `⚠️ ATENÇÃO: ${repetitions.length} repetição(ões) registrada(s).
-   AÇÃO: Monitorar o próximo bloco com atenção.
-`;
-                hasInsights = true;
-            }
-            
-            const lowGrades = reportHistory.filter(e => parseFloat(e.grade) < 7);
-            if (lowGrades.length > 0) {
-                analysis += `📊 PONTO DE ATENÇÃO (BOLETIM):
-   Nota(s) abaixo de 7.0 em: ${lowGrades.map(e => e.subject).join(', ')}.
-   AÇÃO: Agendar reunião com os pais para alinhar estratégias.
-`;
-                hasInsights = true;
-            }
-            
-            const alerts = performanceLog.filter(e => e.type === 'ALERTA');
-            if (alerts.length > 0) {
-                const lastAlert = alerts[alerts.length - 1];
-                const alertDate = lastAlert.date || lastAlert.createdAt;
-                const displayDate = alertDate ? new Date(alertDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data desconhecida';
-                analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
-   - "${lastAlert.details}" (${displayDate})
-   AÇÃO: Verificar se o problema foi resolvido.
-`;
-                hasInsights = true;
-            }
-            
-            analysis += `💡 SUGESTÃO ESTRATÉGGICA:
-`;
-            if (repetitions.length >= 3 && lowGrades.length > 0) {
-                analysis += `   Prioridade máxima: agendar reunião com os pais. O platô no Kumon pode estar correlacionado com a dificuldade na escola.
-`;
-            } else if (!hasInsights) {
-                analysis += `   O progresso parece estável. Manter o acompanhamento e registrar elogios para reforço positivo.
-`;
-            } else {
-                 analysis += `   Revisar os pontos de atenção acima e focar nas ações sugeridas.
-`;
-            }
-        }
-        
-        analysis += `
-Última atualização: ${new Date().toLocaleString('pt-BR')}`;
-        analysisContent.textContent = analysis;
-    },
-
-    // Esta função é usada APENAS para anexos de boletins (Inalterada)
+    // Função de upload para anexos (Inalterada)
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js');
