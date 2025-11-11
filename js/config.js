@@ -16,9 +16,11 @@ const firebaseConfig = {
 // --- Configuração do Cloudinary (PREENCHA ESTES VALORES) ---
 const cloudinaryConfig = {
     cloudName: "djtiaygrs",
-    uploadPreset: "kumon_ia" // Usado para upload de áudio e boletins
+    uploadPreset: "kumon_ia" // Usado para upload de boletins (anexos)
 };
 
-// --- ConfigURAÇÃO DA OPENAI API (NOVA ARQUITETURA) ---
+// --- ConfigURAÇÃO DA GOOGLE GEMINI API (NOVA ARQUITETURA) ---
 // AVISO: Esta chave será exposta no frontend.
-window.OPENAI_API_KEY = "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"; // Ex: "sk-..."
+// Crie esta chave em: https://aistudio.google.com/app/apikey
+// ATIVE A "Generative Language API" NO SEU PROJETO GOOGLE CLOUD
+window.GEMINI_API_KEY = "COLE_SUA_CHAVE_DA_API_GEMINI_AQUI"; // Ex: "AIza..."
