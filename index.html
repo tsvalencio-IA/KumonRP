@@ -62,14 +62,25 @@
                 </div>
             </fieldset>
 
-            <!-- MÓDULO DE REUNIÕES (Modificado para fluxo de 2 etapas) -->
+            <!-- MÓDULO DE REUNIÕES (Modificado com Seleção de Aluno) -->
             <fieldset id="meetingsModule">
                 <legend>Diário de Reuniões de Pais</legend>
                 
-                <div class="form-section">
-                    <label for="meetingDate">📅 Data da Reunião</label>
-                    <input type="date" id="meetingDate">
+                <div class="grid-2-col">
+                    <div class="form-section">
+                        <label for="meetingDate">📅 Data da Reunião</label>
+                        <input type="date" id="meetingDate">
+                    </div>
+                    <!-- **NOVO CAMPO** Seleção de Aluno -->
+                    <div class="form-section">
+                        <label for="meetingStudentSelect">👨‍🎓 Reunião Sobre (Aluno)</label>
+                        <select id="meetingStudentSelect" required>
+                            <option value="" disabled selected>Selecione um aluno...</option>
+                            <!-- Populado pelo JS -->
+                        </select>
+                    </div>
                 </div>
+
 
                 <div class="form-section">
                     <label for="audioUpload">📤 Enviar Áudio Gravado (Galeria)</label>
@@ -85,12 +96,11 @@
                 </div>
                 
                 <div class="button-container">
-                    <!-- ETAPA 1: Botão de Transcrição (Gemini) -->
                     <button id="transcribeAudioBtn" class="btn" disabled>1. Transcrever Áudio (Gemini)</button>
                 </div>
             </fieldset>
 
-            <!-- NOVO MÓDULO: Transcrição e Análise (Aparece após a Etapa 1) -->
+            <!-- MÓDULO: Transcrição e Análise (Inalterado) -->
             <fieldset id="transcriptionModule" class="section-box hidden">
                 <legend>🤖 Análise de Reunião</legend>
                 
@@ -100,7 +110,6 @@
                 </div>
 
                 <div class="button-container">
-                    <!-- ETAPA 2: Botão de Análise (Gemini) -->
                     <button id="analyzeTranscriptionBtn" class="btn">2. Analisar Transcrição (Gemini)</button>
                 </div>
             </fieldset>
@@ -122,7 +131,7 @@
                 </div>
             </fieldset>
 
-            <!-- Seção de Relatório (Agora populada pela Etapa 2) -->
+            <!-- Seção de Relatório (Inalterado, mas agora será populada com dados do aluno) -->
             <section id="reportSection" class="section-box hidden">
                 <h2>📊 Relatório Final Gerado</h2>
                 <div id="reportContent" class="report-content">
@@ -139,7 +148,7 @@
         </footer>
     </div>
 
-    <!-- Modal de Aluno (Inalterado) -->
+    <!-- Modal de Aluno (Modificado para nova aba de Análise) -->
     <div id="studentModal" class="modal-overlay hidden">
         <div class="modal-content">
             <div class="modal-header">
@@ -148,6 +157,7 @@
             </div>
             <div class="modal-body">
                 <form id="studentForm">
+                    <!-- Campos de formulário inalterados -->
                     <input type="hidden" id="studentId">
                     <div class="grid-2-col">
                         <div class="form-section">
@@ -184,9 +194,11 @@
                         <button class="tab-btn active" data-tab="programming">📅 Programação</button>
                         <button class="tab-btn" data-tab="reports">📊 Boletins</button>
                         <button class="tab-btn" data-tab="performance">⚡ Desempenho</button>
-                        <button class="tab-btn" data-tab="analysis">🤖 Análise IA</button>
+                        <!-- **ABA MODIFICADA** -->
+                        <button class="tab-btn" data-tab="analysis">🤖 Última Análise (Reunião)</button>
                     </div>
 
+                    <!-- Abas de Programação, Boletins, Desempenho (Inalteradas) -->
                     <div id="tab-programming" class="tab-content active">
                         <h3>📅 Programação de Material</h3>
                         <form id="programmingForm" class="inline-form">
@@ -211,7 +223,6 @@
                             <div id="programmingHistory" class="history-list"></div>
                         </div>
                     </div>
-
                     <div id="tab-reports" class="tab-content">
                         <h3>📊 Boletins Escolares</h3>
                         <form id="reportForm" class="inline-form">
@@ -246,7 +257,6 @@
                             <div id="reportHistory" class="history-list"></div>
                         </div>
                     </div>
-
                     <div id="tab-performance" class="tab-content">
                         <h3>⚡ Registro de Desempenho</h3>
                         <form id="performanceForm" class="inline-form">
@@ -280,14 +290,15 @@
                         </div>
                     </div>
 
+                    <!-- **CONTEÚDO DA ABA MODIFICADO** -->
                     <div id="tab-analysis" class="tab-content">
-                        <h3>🤖 Análise Inteligente</h3>
+                        <h3>🤖 Última Análise de Reunião (IA)</h3>
                         <div class="analysis-section">
                             <div class="analysis-header">
-                                <p>💡 <strong>Insights baseados no histórico do aluno:</strong></p>
-                                <button id="refreshAnalysisBtn" class="btn btn-small">🔄 Gerar Nova Análise</button>
+                                <p>💡 <strong>Relatório JSON da última reunião salva:</strong></p>
+                                <!-- Botão de Refresh removido -->
                             </div>
-                            <pre id="student-analysis-content" class="analysis-content">Clique em "Gerar Nova Análise" para começar.</pre>
+                            <pre id="student-analysis-content" class="analysis-content">Nenhum relatório de reunião (com IA) salvo para este aluno.</pre>
                         </div>
                     </div>
                 </div>
@@ -299,7 +310,7 @@
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts (Inalterados) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
