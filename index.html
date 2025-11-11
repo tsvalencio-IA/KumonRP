@@ -85,8 +85,8 @@
                 </div>
                 
                 <div class="button-container">
-                    <!-- ETAPA 1: Botão de Transcrição -->
-                    <button id="transcribeAudioBtn" class="btn" disabled>1. Transcrever Áudio (Whisper)</button>
+                    <!-- ETAPA 1: Botão de Transcrição (Gemini) -->
+                    <button id="transcribeAudioBtn" class="btn" disabled>1. Transcrever Áudio (Gemini)</button>
                 </div>
             </fieldset>
 
@@ -100,8 +100,8 @@
                 </div>
 
                 <div class="button-container">
-                    <!-- ETAPA 2: Botão de Análise -->
-                    <button id="analyzeTranscriptionBtn" class="btn">2. Analisar Transcrição (GPT-4o)</button>
+                    <!-- ETAPA 2: Botão de Análise (Gemini) -->
+                    <button id="analyzeTranscriptionBtn" class="btn">2. Analisar Transcrição (Gemini)</button>
                 </div>
             </fieldset>
 
@@ -299,13 +299,13 @@
         </div>
     </div>
 
-    <!-- Scripts (Inalterados) -->
+    <!-- Scripts -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="https://upload-widget.cloudinary.com/global/all.js" type="text-javascript"></script> 
+    <script src="https://upload-widget.cloudinary.com/global/all.js" type="text/javascript"></script> 
     <script src="js/config.js"></script>
-    <script src="js/app.js"></script> <!-- Este arquivo será atualizado -->
+    <script src="js/app.js"></script>
     <script src="js/auth.js"></script>
 </body>
 </html>
