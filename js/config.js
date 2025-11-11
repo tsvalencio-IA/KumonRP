@@ -4,7 +4,7 @@
 // =====================================================================
 // =====================================================================
 const firebaseConfig = {
-    apiKey: "AIzaSyBc4bPhHBhZ-6wL7DUBGUhEtt9wt8BcbtE",
+    apiKey: "AIzaSyAEzkzfF9Pgy1-rxlnV_ekGhucirmvFXlQ",
     authDomain: "kumon-c63a2.firebaseapp.com",
     databaseURL: "https://kumon-c63a2-default-rtdb.firebaseio.com",
     projectId: "kumon-c63a2",
