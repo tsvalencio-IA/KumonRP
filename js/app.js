@@ -1,15 +1,16 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
-// RE-ARQUITETADO PARA USAR OPENAI (GPT-4o) EM VEZ DE GOOGLE
+// RE-ARQUITETADO PARA FLUXO DE 2 ETAPAS (Transcrição -> Análise)
 const App = {
     state: {
         userId: null,
-        db: null, // Agora será uma instância do Realtime Database
+        db: null, // Instância do Realtime Database
         students: {},
         currentStudentId: null,
-        reportData: null,
-        audioFile: null // Armazena o áudio (gravado ou enviado)
+        reportData: null, // Armazena o JSON final da ANÁLISE
+        audioFile: null // Armazena o arquivo de áudio
     },
     elements: {},
+
     // =====================================================================
     // ======================== INICIALIZAÇÃO E SETUP ======================
     // =====================================================================
@@ -21,33 +22,38 @@ const App = {
 
         document.getElementById('app-container').classList.remove('hidden');
         this.state.userId = user.uid;
-        this.state.db = databaseInstance; // Recebendo firebase.database()
+        this.state.db = databaseInstance; 
         
         document.getElementById('userEmail').textContent = user.email;
         this.mapDOMElements();
         this.addEventListeners();
         this.loadStudents();
     },
+
     mapDOMElements() {
         this.elements = {
             // Geral
             logoutButton: document.getElementById('logout-button'),
             systemOptionsBtn: document.getElementById('system-options-btn'),
             
-            // Diário de Reuniões (UI Refatorada)
+            // Diário de Reuniões (Etapa 1: Upload)
             meetingDate: document.getElementById('meetingDate'),
             audioUpload: document.getElementById('audioUpload'),
-            audioFileName: document.getElementById('audioFileName'), // Novo
+            audioFileName: document.getElementById('audioFileName'),
             additionalNotes: document.getElementById('additionalNotes'),
-            processAudioBtn: document.getElementById('processAudioBtn'),
-            viewReportBtn: document.getElementById('viewReportBtn'),
+            transcribeAudioBtn: document.getElementById('transcribeAudioBtn'), // Alterado
             
+            // Módulo de Transcrição (Etapa 2: Análise)
+            transcriptionModule: document.getElementById('transcriptionModule'), // Novo
+            transcriptionOutput: document.getElementById('transcriptionOutput'), // Novo
+            analyzeTranscriptionBtn: document.getElementById('analyzeTranscriptionBtn'), // Novo
+
             // Relatórios
             reportSection: document.getElementById('reportSection'),
             reportContent: document.getElementById('reportContent'),
             downloadReportBtn: document.getElementById('downloadReportBtn'),
             
-            // Módulo de Alunos
+            // Módulo de Alunos (Inalterado)
             addStudentBtn: document.getElementById('addStudentBtn'),
             studentSearch: document.getElementById('studentSearch'),
             studentList: document.getElementById('student-list'),
@@ -63,7 +69,6 @@ const App = {
             reportForm: document.getElementById('reportForm'),
             performanceForm: document.getElementById('performanceForm'),
             studentAnalysisContent: document.getElementById('student-analysis-content'),
-            
             programmingHistory: document.getElementById('programmingHistory'),
             reportHistory: document.getElementById('reportHistory'),
             performanceLog: document.getElementById('performanceHistory'), 
@@ -73,21 +78,23 @@ const App = {
             uploadBrainFileBtn: document.getElementById('uploadBrainFileBtn'),
         };
     },
+
     addEventListeners() {
         // Geral
         this.elements.logoutButton.addEventListener('click', () => firebase.auth().signOut());
         this.elements.systemOptionsBtn.addEventListener('click', () => this.promptForReset());
         
-        // Diário de Reuniões (Lógica Refatorada)
+        // Diário de Reuniões (Novo Fluxo)
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
-        this.elements.processAudioBtn.addEventListener('click', () => this.processAudioWithAI());
-        this.elements.viewReportBtn.addEventListener('click', () => this.showReport());
+        this.elements.transcribeAudioBtn.addEventListener('click', () => this.transcribeAudio()); // ETAPA 1
+        this.elements.analyzeTranscriptionBtn.addEventListener('click', () => this.analyzeTranscriptionText()); // ETAPA 2
+        
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
         
         // Módulo Brain
         this.elements.uploadBrainFileBtn.addEventListener('click', () => this.handleBrainFileUpload());
         
-        // Alunos
+        // Alunos (Inalterado)
         this.elements.addStudentBtn.addEventListener('click', () => this.openStudentModal());
         this.elements.studentSearch.addEventListener('input', () => this.renderStudentList());
         this.elements.closeModalBtn.addEventListener('click', () => this.closeStudentModal());
@@ -110,138 +117,155 @@ const App = {
         if (file) {
             this.state.audioFile = file; // Salva o arquivo do upload
             this.elements.audioFileName.textContent = `Arquivo selecionado: ${file.name}`;
-            this.elements.processAudioBtn.disabled = false;
+            this.elements.transcribeAudioBtn.disabled = false;
         } else {
             this.state.audioFile = null;
             this.elements.audioFileName.textContent = '';
-            this.elements.processAudioBtn.disabled = true;
+            this.elements.transcribeAudioBtn.disabled = true;
         }
     },
 
     // =====================================================================
-    // ================== ARQUITETURA DE IA (OpenAI) =======================
+    // ================== NOVA ARQUITETURA DE IA (2 Etapas) ================
     // =====================================================================
 
     /**
-     * Esta função (upload para Cloudinary) PERMANECE.
-     * O GPT-4o pode processar áudio a partir de uma URL.
+     * ETAPA 1: Transcrever o Áudio usando a API Whisper da OpenAI.
      */
-    async uploadAudioToCloudinary(audioBlob) {
-        if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-            throw new Error('Configuração do Cloudinary não encontrada em js/config.js. Verifique se as chaves estão corretas.');
-        }
-
-        if (!(audioBlob instanceof File)) {
-            audioBlob = new File([audioBlob], 'meeting_audio.webm', { type: audioBlob.type || 'audio/webm' });
-        }
-
-        const formData = new FormData();
-        formData.append('file', audioBlob);
-        formData.append('upload_preset', cloudinaryConfig.uploadPreset);
-        formData.append('folder', `${this.state.userId}/reunioes`);
-        
-        // Usar 'raw' permite que a IA busque o arquivo
-        formData.append('resource_type', 'raw');
-
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Erro no upload para Cloudinary: ${errorData.error?.message || 'Erro desconhecido'}`);
-        }
-
-        const result = await response.json();
-        // Retorna a URL e o mime-type original
-        return {
-            url: result.secure_url,
-            mimeType: audioBlob.type
-        };
-    },
-
-    async processAudioWithAI() {
-        this.elements.reportContent.textContent = 'Processando áudio com IA...';
-        this.elements.reportContent.style.color = 'inherit'; // Reseta a cor
-        this.elements.reportSection.classList.remove('hidden');
-        this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
-
-        let audioParaProcessar = this.state.audioFile;
+    async transcribeAudio() {
+        this.elements.transcriptionOutput.value = 'Processando áudio com IA (Whisper)...';
+        this.elements.transcriptionOutput.style.color = 'inherit';
+        this.elements.transcriptionModule.classList.remove('hidden');
+        this.elements.transcriptionModule.scrollIntoView({ behavior: 'smooth' });
 
         try {
-            if (!audioParaProcessar) {
-                throw new Error('Nenhum áudio encontrado. Grave ou envie um arquivo primeiro.');
+            if (!this.state.audioFile) {
+                throw new Error('Nenhum áudio encontrado. Envie um arquivo primeiro.');
+            }
+            if (!window.OPENAI_API_KEY) {
+                throw new Error('OPENAI_API_KEY não encontrada em js/config.js.');
             }
 
-            // Obter brain.json do Firebase (Contexto)
-            const brainData = await this.fetchBrainData();
-
-            // Etapa 1: Enviar para o Cloudinary (para obter uma URL)
-            this.elements.reportContent.textContent = 'Enviando áudio para o Cloudinary (banco de arquivos)...';
-            const { url: audioUrl } = await this.uploadAudioToCloudinary(audioParaProcessar);
-
-            // Etapa 2: Chamar a API da OpenAI (GPT-4o) com a URL
-            this.elements.reportContent.textContent = 'Enviando URL do áudio e contexto para análise da IA (OpenAI GPT-4o)...';
-            const analysis = await this.callOpenAIForAnalysis(audioUrl, brainData || {});
-
-            // Salvar relatório no estado e exibir
-            this.state.reportData = analysis;
-            this.renderReport(analysis);
+            const transcriptionText = await this.callOpenAIForTranscription(this.state.audioFile);
+            
+            this.elements.transcriptionOutput.value = transcriptionText;
 
             // Limpa o áudio após o processamento
             this.state.audioFile = null;
             this.elements.audioUpload.value = null;
             this.elements.audioFileName.textContent = "";
-            this.elements.processAudioBtn.disabled = true;
+            this.elements.transcribeAudioBtn.disabled = true;
 
         } catch (error) {
-            console.error('Erro ao processar áudio:', error);
-            this.elements.reportContent.textContent = `Erro ao processar áudio: ${error.message}`;
+            console.error('Erro ao transcrever áudio:', error);
+            this.elements.transcriptionOutput.value = `Erro ao transcrever áudio: ${error.message}\n\nO erro 401 (Unauthorized) pode significar que a chave API está incorreta ou que o faturamento não está ativo para a API de Áudio.`;
+            this.elements.transcriptionOutput.style.color = 'red';
+        }
+    },
+
+    /**
+     * Função HELPER para chamar o endpoint /audio/transcriptions (Whisper)
+     */
+    async callOpenAIForTranscription(audioFile) {
+        const API_URL = "https://api.openai.com/v1/audio/transcriptions";
+        
+        const formData = new FormData();
+        formData.append('file', audioFile);
+        formData.append('model', 'whisper-1');
+        formData.append('language', 'pt'); // Força a transcrição em Português
+        formData.append('response_format', 'text'); // Pede texto puro
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${window.OPENAI_API_KEY}`
+                // Não defina 'Content-Type' ao usar FormData, o browser faz isso.
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Erro da API OpenAI (Whisper): ${errorData.error?.message || 'Erro desconhecido'}`);
+        }
+
+        const transcription = await response.text();
+        return transcription;
+    },
+
+    /**
+     * ETAPA 2: Analisar o Texto da Transcrição usando GPT-4o.
+     */
+    async analyzeTranscriptionText() {
+        const transcriptionText = this.elements.transcriptionOutput.value;
+        if (!transcriptionText || transcriptionText.startsWith('Erro ao transcrever')) {
+            alert('Não há transcrição válida para analisar.');
+            return;
+        }
+
+        this.elements.reportContent.textContent = 'Analisando transcrição com IA (GPT-4o)...';
+        this.elements.reportContent.style.color = 'inherit';
+        this.elements.reportSection.classList.remove('hidden');
+        this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
+
+        try {
+            // Obter brain.json do Firebase (Contexto)
+            const brainData = await this.fetchBrainData();
+
+            // Chamar a API da OpenAI (GPT-4o) com o TEXTO
+            const analysis = await this.callOpenAIForAnalysis(transcriptionText, brainData || {});
+
+            // Salvar relatório no estado e exibir
+            this.state.reportData = analysis;
+            this.renderReport(analysis);
+
+        } catch (error) {
+            console.error('Erro ao analisar transcrição:', error);
+            this.elements.reportContent.textContent = `Erro ao analisar transcrição: ${error.message}`;
             this.elements.reportContent.style.color = 'red';
         }
     },
 
     /**
-     * NOVA FUNÇÃO: Chama a API da OpenAI (GPT-4o) com a URL do áudio.
+     * Função HELPER (Modificada) para chamar o endpoint /chat/completions (GPT-4o)
      */
-    async callOpenAIForAnalysis(audioUrl, brainData) {
+    async callOpenAIForAnalysis(transcriptionText, brainData) {
         if (!window.OPENAI_API_KEY) {
-            throw new Error('OPENAI_API_KEY não encontrada em js/config.js. O sistema não pode processar o áudio sem uma chave válida.');
+            throw new Error('OPENAI_API_KEY não encontrada em js/config.js.');
         }
 
         const API_URL = "https://api.openai.com/v1/chat/completions";
         
+        // PROMPT ATUALIZADO PARA RECEBER TEXTO, NÃO ÁUDIO
         const textPrompt = `
-Você é um assistente de transcrição e análise do Método Kumon. Sua tarefa é processar o ÁUDIO (fornecido por uma URL) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
+Você é uma assistente sênior de análise do Método Kumon, com muitos anos de experiência. Sua tarefa é analisar a TRANSCRIÇÃO de uma reunião (fornecida abaixo) e o CONTEXTO (brain.json) e retornar um JSON ESTRITO.
 
-REGRAS RÍGIDAS (NÃO QUEBRE):
-1.  **TRANSCREVA PRIMEIRO**: Ouça o áudio na URL fornecida. Se o áudio estiver silencioso, ou não contiver falas humanas claras, PARE. Retorne um JSON com um erro: { "erro": "Áudio silencioso ou inaudível. Nenhuma transcrição gerada." }
-2.  **NÃO INVENTE TRANSCRIÇÃO**: Se o áudio for silencioso, NÃO gere uma transcrição baseada no contexto. A transcrição DEVE vir 100% do áudio.
-3.  **USE O CONTEXTO**: Após transcrever, use o "brain.json" para identificar alunos (fuzzy match) e preencher o resto do relatório.
-4.  **SEJA FIEL AOS FATOS**: O resumo executivo e as dores DEVEM ser baseados no que foi dito no áudio. Use o "brain.json" apenas para confirmar dados (como ID do aluno ou estágio).
+REGRA DE OURO (NÃO QUEBRE JAMAIS):
+A IA JAMAIS PODE CRIAR, INVENTAR OU SE ALUCINAR. Tudo que for gerado deve ser 100% com a verdade baseada na transcrição. O "brain.json" serve apenas para IDENTIFICAR alunos e fornecer contexto, NUNCA para inventar fatos sobre a reunião. A vida de pessoas está em jogo. Somente a VERDADE é permitida.
 
-CONTEXTO (brain.json):
+TRANSCRIÇÃO DA REUNIÃO (Fonte da Verdade):
+---
+${transcriptionText}
+---
+
+CONTEXTO (brain.json - Usar apenas para identificar alunos e estágios):
 ${JSON.stringify(brainData, null, 2)}
 
-PROCESSE O ÁUDIO (na URL) e retorne APENAS o JSON.
+PROCESSE A TRANSCRIÇÃO e retorne APENAS o JSON.
 
-FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
+FORMATO JSON OBRIGATÓRIO:
 {
-  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "audio_url": "${audioUrl}", "duration_s": "REAL_DURATION_IN_SECONDS", "parts": 1 },
-  "consentimentos": [],
-  "transcription_raw": "string completa da transcrição REAL do áudio",
-  "speakers": [{"id": "string", "label": "string", "segments": [{"start": "number", "end": "number", "text": "string"}]}],
-  "mentions_alunos": [{"aluno_id": "string", "nome": "string", "context": "string", "confidence": "number"}],
-  "resumo_executivo": "string (Baseado na transcrição E no brain.json)",
-  "decisoes_sugeridas": [{"texto": "string", "responsavel_sugerido": "string", "prazo_sugerido_days": "number", "source_evidence": "string"}],
-  "itens_acao": [{"descricao": "string", "responsavel": "string", "prazo_days": "number", "prioridade": "string"}],
-  "dores_familia": [{"familia_nome": "string", "dor_texto": "string", "evidencia_texto": "string", "confidence": "number"}],
-  "dores_unidade": [{"dor_texto": "string", "impacto": "string", "evidencia": "string"}],
-  "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string", "evidencia": "string"}],
-  "audit_log": [{"action": "string", "by": "model|user", "timestamp": "${new Date().toISOString()}", "details": "string"}],
+  "meta": { "created_at": "${new Date().toISOString()}", "sala_id": "REUNIAO_LOCAL", "source": "transcription_text" },
+  "mentions_alunos": [{"aluno_id": "string (do brain.json)", "nome": "string (do brain.json)", "context": "string (evidência da transcrição)", "confidence": "number"}],
+  "resumo_executivo": "string (Resumo FIEL E VERDADEIRO do que foi dito na transcrição)",
+  "decisoes_sugeridas": [{"texto": "string (Baseado na transcrição)", "responsavel_sugerido": "string", "prazo_sugerido_days": "number", "source_evidence": "string (Citação da transcrição)"}],
+  "itens_acao": [{"descricao": "string (Ação clara definida na transcrição)", "responsavel": "string", "prazo_days": "number", "prioridade": "string"}],
+  "dores_familia": [{"familia_nome": "string (Identificada na transcrição/brain)", "dor_texto": "string (PROBLEMA REAL dito na transcrição)", "evidencia_texto": "string (Citação exata da transcrição)", "confidence": "number"}],
+  "dores_unidade": [{"dor_texto": "string (Problema da unidade mencionado na transcrição)", "impacto": "string", "evidencia": "string (Citação da transcrição)"}],
+  "recomendacoes": [{"tipo": "string", "acao": "string", "justificativa": "string (Baseado na transcrição E no método Kumon)", "evidencia": "string (Citação da transcrição)"}],
+  "audit_log": [{"action": "analysis_complete", "by": "model", "timestamp": "${new Date().toISOString()}", "details": "Análise de transcrição concluída."}],
   "requer_validacao_humana": true,
-  "sources": ["brain.json", "audio_input_real"]
+  "sources": ["brain.json", "transcription_text"]
 }
         `;
 
@@ -251,20 +275,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        // 1. O Prompt de Texto
-                        {
-                            "type": "text",
-                            "text": textPrompt
-                        },
-                        // 2. A URL do Áudio
-                        {
-                            "type": "image_url", // Sim, a API usa "image_url" para URLs de áudio
-                            "image_url": {
-                                "url": audioUrl
-                            }
-                        }
-                    ]
+                    "content": textPrompt // Envia apenas o prompt de texto
                 }
             ]
         };
@@ -280,7 +291,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Erro da API OpenAI: ${errorData.error?.message || 'Erro desconhecido'}`);
+            throw new Error(`Erro da API OpenAI (GPT-4o): ${errorData.error?.message || 'Erro desconhecido'}`);
         }
 
         const data = await response.json();
@@ -310,18 +321,14 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
     },
     
+    // =====================================================================
+    // ================== RENDERIZAÇÃO E DOWNLOAD (Inalterado) =============
+    // =====================================================================
+    
     renderReport(reportData) {
         this.elements.reportContent.textContent = JSON.stringify(reportData, null, 2);
     },
-    showReport() {
-        if (this.state.reportData) {
-            this.renderReport(this.state.reportData);
-            this.elements.reportSection.classList.remove('hidden');
-            this.elements.reportSection.scrollIntoView({ behavior: 'smooth' });
-        } else {
-            alert('Nenhum relatório disponível. Processar o áudio primeiro.');
-        }
-    },
+
     downloadReport() {
         if (!this.state.reportData) {
             alert('Nenhum relatório para download.');
@@ -329,7 +336,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
 
         const content = JSON.stringify(this.state.reportData, null, 2);
-        const filename = `Relatorio_Reuniao_${this.elements.meetingDate.value || new Date().toISOString().split('T')[0]}.json`;
+        const filename = `Relatorio_Analise_${this.elements.meetingDate.value || new Date().toISOString().split('T')[0]}.json`;
         const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -415,6 +422,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             alert(`Erro ao processar o arquivo: ${error.message}`);
         }
     },
+
     deepMerge(target, source) {
         const output = { ...target };
         if (this.isObject(target) && this.isObject(source)) {
@@ -432,12 +440,15 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
         return output;
     },
+
     isObject(item) {
         return (item && typeof item === 'object' && !Array.isArray(item));
     },
+
     // =====================================================================
     // ======================= MÓDULO DE ALUNOS ============================
     // =====================================================================
+    
     async loadStudents() {
         try {
             const data = await this.fetchData('alunos/lista_alunos');
@@ -448,6 +459,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             alert('Não foi possível carregar os dados dos alunos.');
         }
     },
+
     renderStudentList() {
         const searchTerm = this.elements.studentSearch.value.toLowerCase();
         
@@ -479,6 +491,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 </div>
             `).join('');
     },
+
     openStudentModal(studentId = null) {
         this.state.currentStudentId = studentId;
         this.elements.studentModal.classList.remove('hidden');
@@ -505,16 +518,19 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
         this.switchTab('programming');
     },
+
     closeStudentModal() {
         this.elements.studentModal.classList.add('hidden');
         this.state.currentStudentId = null;
     },
+
     switchTab(tabName) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
         document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
         document.getElementById(`tab-${tabName}`).classList.add('active');
     },
+
     async saveStudent() {
         if (!this.elements.studentForm.checkValidity()) {
             this.elements.studentForm.reportValidity();
@@ -557,6 +573,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
             alert('Erro ao salvar aluno. Tente novamente.');
         }
     },
+
     async deleteStudent() {
         if (!this.state.currentStudentId) return;
         const studentName = this.state.students[this.state.currentStudentId].name;
@@ -610,6 +627,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         await this.saveBrainData(updatedBrain);
         console.log("brain.json atualizado com base nos alunos da plataforma (Realtime DB).");
     },
+
     loadStudentHistories(studentId) {
         const student = this.state.students[studentId];
         if (!student) return this.clearStudentHistories();
@@ -617,6 +635,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         this.renderHistory('reportHistory', student.reportHistory || []);
         this.renderHistory('performanceLog', student.performanceLog || []);
     },
+
     clearStudentHistories() {
         if (this.elements.programmingHistory) {
             this.elements.programmingHistory.innerHTML = '<p>Nenhuma programação registrada.</p>';
@@ -720,8 +739,9 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
                 date = new Date(entryDateStr).toLocaleDateString('pt-BR');
             } else if (entryDateStr.includes('-')) {
                 const parts = entryDateStr.split('-');
-                const localDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
-                date = localDate.toLocaleDateString('pt-BR');
+                // Constrói como UTC para evitar problemas de fuso horário
+                const localDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+                date = localDate.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
             }
         }
 
@@ -765,6 +785,7 @@ FORMATO JSON OBRIGATÓRIO (Se o áudio NÃO for silencioso):
         }
     },
     
+    // Esta análise é um placeholder local, não usa IA. (Inalterado)
     async analyzeStudent(studentId) {
         if (!studentId) return;
         const analysisContent = this.elements.studentAnalysisContent;
@@ -819,7 +840,7 @@ ${'='.repeat(50)}
             if (alerts.length > 0) {
                 const lastAlert = alerts[alerts.length - 1];
                 const alertDate = lastAlert.date || lastAlert.createdAt;
-                const displayDate = alertDate ? new Date(alertDate + 'T12:00:00Z').toLocaleDateString('pt-BR') : 'data desconhecida';
+                const displayDate = alertDate ? new Date(alertDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'data desconhecida';
                 analysis += `⚡️ ALERTA(S) MANUAL(IS) REGISTRADO(S):
    - "${lastAlert.details}" (${displayDate})
    AÇÃO: Verificar se o problema foi resolvido.
@@ -846,7 +867,7 @@ ${'='.repeat(50)}
         analysisContent.textContent = analysis;
     },
 
-    // Esta função é usada APENAS para anexos de boletins
+    // Esta função é usada APENAS para anexos de boletins (Inalterada)
     async uploadFileToCloudinary(file, folder) {
         if (!cloudinaryConfig || !cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
             throw new Error('Configuração do Cloudinary não encontrada em js/config.js');
@@ -855,7 +876,6 @@ ${'='.repeat(50)}
         formData.append('file', file);
         formData.append('upload_preset', cloudinaryConfig.uploadPreset);
         formData.append('folder', `${this.state.userId}/${folder}`);
-        // Para boletins (imagens/pdf), não usamos 'raw'
         formData.append('resource_type', 'auto');
         
         const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/upload`, { method: 'POST', body: formData });
@@ -863,6 +883,8 @@ ${'='.repeat(50)}
         const result = await response.json();
         return result.secure_url;
     },
+
+    // Reset (Inalterado)
     promptForReset() {
         const code = prompt("Para aceder às opções de sistema, digite o código de segurança:");
         if (code === '*177') {
@@ -876,6 +898,7 @@ ${'='.repeat(50)}
             alert("Código incorreto.");
         }
     },
+
     async hardResetUserData() {
         alert("A iniciar o reset completo do sistema. A página será recarregada ao concluir.");
         try {
