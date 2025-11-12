@@ -116,7 +116,7 @@ const App = {
     },
 
     // =====================================================================
-    // ================== LÓGICA DO DASHBOARD (NOVO) =======================
+    // ================== LÓGICA DO DASHBOARD (CORRIGIDA) ==================
     // =====================================================================
 
     openDashboard() {
@@ -131,14 +131,22 @@ const App = {
     generateDashboardData() {
         const students = Object.values(this.state.students);
         
-        // 1. Dados para o Gráfico de Estágios (Matemática)
+        // 1. Dados para o Gráfico de Estágios (Geral)
+        // CORREÇÃO AQUI: Contar TODAS as matérias, não só matemática.
         const stages = {};
+        
         students.forEach(s => {
-            if (s.mathStage) {
-                // Pega só a letra (Ex: "D150" -> "D")
-                const stageLetter = s.mathStage.charAt(0).toUpperCase();
-                stages[stageLetter] = (stages[stageLetter] || 0) + 1;
-            }
+            // Array de matérias possíveis
+            const subjects = [s.mathStage, s.portStage, s.engStage];
+            
+            subjects.forEach(stage => {
+                // Se o estágio existe e não está vazio
+                if (stage && stage.trim() !== "") {
+                    // Pega só a primeira letra/número (Ex: "D150" -> "D", "4A" -> "4")
+                    const stageLetter = stage.trim().charAt(0).toUpperCase();
+                    stages[stageLetter] = (stages[stageLetter] || 0) + 1;
+                }
+            });
         });
 
         // 2. Dados de Risco/Motivação (Baseado na última análise da IA)
@@ -210,7 +218,7 @@ const App = {
             data: {
                 labels: Object.keys(stageData).sort(),
                 datasets: [{
-                    label: 'Qtd Alunos',
+                    label: 'Qtd Alunos (Por Estágio/Matéria)',
                     data: Object.keys(stageData).sort().map(k => stageData[k]),
                     backgroundColor: '#0078c1'
                 }]
