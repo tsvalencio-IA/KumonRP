@@ -9,11 +9,9 @@
     <link rel="apple-touch-icon" href="icon.png">
     <meta name="theme-color" content="#0078c1">
     <link href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
-    <!-- IMPORTANTE: Biblioteca para Gráficos -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body id="app-page">
-    <!-- Tela de Login (Inalterada) -->
     <div id="login-screen" class="login-container">
         <h1 class="text-3xl font-bold text-cyan-400 mb-2 text-center">Central de Comando</h1>
         <p class="text-lg font-semibold text-white text-center">Kumon</p>
@@ -31,7 +29,6 @@
         </form>
     </div>
 
-    <!-- Container Principal da Aplicação -->
     <div id="app-container" class="container hidden">
         <header>
             <div class="header-content">
@@ -42,7 +39,6 @@
                 <div class="user-info">
                     <p id="userEmail" class="font-semibold"></p>
                     <div class="header-actions">
-                        <!-- NOVO BOTÃO DE DASHBOARD -->
                         <button id="dashboard-btn" class="options-btn" style="border-color: var(--kumon-blue); color: var(--kumon-blue);">
                             <i class='bx bxs-dashboard'></i>
                             <span>Dashboard Geral</span>
@@ -57,7 +53,6 @@
         </header>
 
         <main>
-            <!-- Módulo de Atualização do "Cérebro" -->
             <fieldset id="brainModule">
                 <legend>🧠 Atualizar 'Cérebro' da IA</legend>
                 <div class="form-section">
@@ -68,7 +63,6 @@
                 </div>
             </fieldset>
 
-            <!-- MÓDULO DE REUNIÕES -->
             <fieldset id="meetingsModule">
                 <legend>Diário de Reuniões de Pais</legend>
                 
@@ -103,7 +97,6 @@
                 </div>
             </fieldset>
 
-            <!-- MÓDULO: Transcrição e Análise -->
             <fieldset id="transcriptionModule" class="section-box hidden">
                 <legend>🤖 Análise de Reunião</legend>
                 
@@ -117,7 +110,6 @@
                 </div>
             </fieldset>
 
-            <!-- Módulo de Gestão de Alunos -->
             <fieldset id="studentsModule">
                 <legend>Gestão de Alunos Inteligente</legend>
                 <div class="students-header">
@@ -130,11 +122,9 @@
                     </div>
                 </div>
                 <div id="student-list" class="student-list">
-                    <!-- Lista de alunos é renderizada pelo JS -->
                 </div>
             </fieldset>
 
-            <!-- Seção de Relatório -->
             <section id="reportSection" class="section-box hidden">
                 <h2>📊 Relatório Final Gerado</h2>
                 <div id="reportContent" class="report-content">
@@ -151,7 +141,6 @@
         </footer>
     </div>
 
-    <!-- Modal de Dashboard (NOVO) -->
     <div id="dashboardModal" class="modal-overlay hidden">
         <div class="modal-content" style="max-width: 1000px;">
             <div class="modal-header">
@@ -160,13 +149,10 @@
             </div>
             <div class="modal-body">
                 <div class="grid-2-col">
-                    <!-- Gráfico 1: Distribuição de Alunos -->
                     <div class="section-box">
-                        <!-- CORREÇÃO DE TÍTULO AQUI -->
                         <h3>📈 Distribuição por Estágio (Geral)</h3>
                         <canvas id="stagesChart"></canvas>
                     </div>
-                    <!-- Gráfico 2: Termômetro Emocional -->
                     <div class="section-box">
                         <h3>🌡️ Termômetro da Unidade (IA)</h3>
                         <canvas id="moodChart"></canvas>
@@ -174,28 +160,21 @@
                 </div>
 
                 <div class="grid-2-col" style="margin-top: 20px;">
-                    <!-- Lista de Risco -->
                     <div class="section-box" style="border-left: 5px solid var(--kumon-red);">
                         <h3 style="color: var(--kumon-red);">⚠️ Alunos em Atenção/Risco</h3>
-                        <p class="text-sm text-gray-500 mb-2">Baseado nas últimas análises da IA (palavras-chave: dificuldade, desistência, desmotivado).</p>
-                        <ul id="riskList" style="list-style: none; padding: 0;">
-                            <!-- Populado via JS -->
-                        </ul>
+                        <p class="text-sm text-gray-500 mb-2">Baseado nas últimas análises da IA.</p>
+                        <ul id="riskList" style="list-style: none; padding: 0;"></ul>
                     </div>
-                    <!-- Lista de Destaques -->
                     <div class="section-box" style="border-left: 5px solid var(--success);">
                         <h3 style="color: var(--success);">⭐ Alunos Motivados/Destaques</h3>
-                        <p class="text-sm text-gray-500 mb-2">Baseado nas últimas análises da IA (palavras-chave: elogio, avanço, excelente).</p>
-                        <ul id="starList" style="list-style: none; padding: 0;">
-                            <!-- Populado via JS -->
-                        </ul>
+                        <p class="text-sm text-gray-500 mb-2">Baseado nas últimas análises da IA.</p>
+                        <ul id="starList" style="list-style: none; padding: 0;"></ul>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Modal de Aluno (Inalterado) -->
     <div id="studentModal" class="modal-overlay hidden">
         <div class="modal-content">
             <div class="modal-header">
@@ -221,15 +200,15 @@
                     </div>
                     <div class="grid-3-col">
                         <div class="form-section">
-                            <label for="mathStage">Estágio Matemática</label>
+                            <label for="mathStage">Matemática (Estágio)</label>
                             <input type="text" id="mathStage" placeholder="Ex: D150">
                         </div>
                         <div class="form-section">
-                            <label for="portStage">Estágio Português</label>
+                            <label for="portStage">Português (Estágio)</label>
                             <input type="text" id="portStage" placeholder="Ex: CII 100">
                         </div>
                         <div class="form-section">
-                            <label for="engStage">Estágio Inglês</label>
+                            <label for="engStage">Inglês (Estágio)</label>
                             <input type="text" id="engStage" placeholder="Ex: G 50">
                         </div>
                     </div>
@@ -240,46 +219,64 @@
                         <button class="tab-btn active" data-tab="programming">📅 Programação</button>
                         <button class="tab-btn" data-tab="reports">📊 Boletins</button>
                         <button class="tab-btn" data-tab="performance">⚡ Desempenho</button>
-                        <button class="tab-btn" data-tab="analysis">🤖 Última Análise (Reunião)</button>
+                        <button class="tab-btn" data-tab="analysis">🤖 Análise IA</button>
                     </div>
 
+                    <!-- ABA PROGRAMAÇÃO -->
                     <div id="tab-programming" class="tab-content active">
                         <h3>📅 Programação de Material</h3>
                         <form id="programmingForm" class="inline-form">
-                            <div class="grid-2-col">
+                            <div class="grid-3-col">
                                 <div class="form-section">
                                     <label for="programmingDate">Data</label>
                                     <input type="date" id="programmingDate" required>
                                 </div>
+                                <!-- NOVO CAMPO: DISCIPLINA -->
                                 <div class="form-section">
-                                    <label for="programmingMaterial">Material</label>
-                                    <input type="text" id="programmingMaterial" placeholder="Ex: Matemática D1-D10" required>
+                                    <label for="programmingSubject">Disciplina</label>
+                                    <select id="programmingSubject" required>
+                                        <option value="Matemática">Matemática</option>
+                                        <option value="Português">Português</option>
+                                        <option value="Inglês">Inglês</option>
+                                    </select>
+                                </div>
+                                <div class="form-section">
+                                    <label for="programmingMaterial">Bloco/Páginas</label>
+                                    <input type="text" id="programmingMaterial" placeholder="Ex: D1-D10" required>
                                 </div>
                             </div>
                             <div class="form-section">
-                                <label for="programmingNotes">Observações</label>
-                                <textarea id="programmingNotes" rows="2" placeholder="Ex: Foco em operações básicas"></textarea>
+                                <label for="programmingNotes">Observações (Foco do estudo)</label>
+                                <textarea id="programmingNotes" rows="2" placeholder="Ex: Atenção nas frações"></textarea>
                             </div>
                             <button type="submit" class="btn">Adicionar Programação</button>
                         </form>
                         <div class="history-section">
-                            <h4>Histórico de Programação</h4>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h4>Histórico de Programação</h4>
+                                <select id="filterProgramming" class="form-input" style="width: auto; padding: 5px;">
+                                    <option value="all">Todas as Matérias</option>
+                                    <option value="Matemática">Matemática</option>
+                                    <option value="Português">Português</option>
+                                    <option value="Inglês">Inglês</option>
+                                </select>
+                            </div>
                             <div id="programmingHistory" class="history-list"></div>
                         </div>
                     </div>
 
+                    <!-- ABA BOLETINS -->
                     <div id="tab-reports" class="tab-content">
                         <h3>📊 Boletins Escolares</h3>
                         <form id="reportForm" class="inline-form">
                             <div class="grid-3-col">
                                 <div class="form-section">
-                                    <label for="reportDate">Data do Boletim</label>
+                                    <label for="reportDate">Data</label>
                                     <input type="date" id="reportDate" required>
                                 </div>
                                 <div class="form-section">
                                     <label for="reportSubject">Disciplina</label>
                                     <select id="reportSubject" required>
-                                        <option value="" disabled selected>Selecione...</option>
                                         <option value="Matemática">Matemática</option>
                                         <option value="Português">Português</option>
                                         <option value="Inglês">Inglês</option>
@@ -287,36 +284,55 @@
                                     </select>
                                 </div>
                                 <div class="form-section">
-                                    <label for="reportGrade">Nota (0 a 10)</label>
+                                    <label for="reportGrade">Nota</label>
                                     <input type="number" id="reportGrade" min="0" max="10" step="0.1" required>
                                 </div>
                             </div>
                             <div class="form-section">
-                                <label for="reportFile">Anexar Boletim (Foto ou PDF)</label>
+                                <label for="reportFile">Anexar Boletim (Foto)</label>
                                 <input type="file" id="reportFile" accept="image/*,.pdf">
                             </div>
                             <button type="submit" class="btn">Adicionar Boletim</button>
                         </form>
                         <div class="history-section">
-                            <h4>Histórico de Boletins</h4>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h4>Histórico de Boletins</h4>
+                                <select id="filterReports" class="form-input" style="width: auto; padding: 5px;">
+                                    <option value="all">Todas</option>
+                                    <option value="Matemática">Matemática</option>
+                                    <option value="Português">Português</option>
+                                    <option value="Inglês">Inglês</option>
+                                </select>
+                            </div>
                             <div id="reportHistory" class="history-list"></div>
                         </div>
                     </div>
 
+                    <!-- ABA DESEMPENHO -->
                     <div id="tab-performance" class="tab-content">
                         <h3>⚡ Registro de Desempenho</h3>
                         <form id="performanceForm" class="inline-form">
-                            <div class="grid-3-col">
+                            <div class="grid-2-col">
                                 <div class="form-section">
                                     <label for="performanceDate">Data</label>
                                     <input type="date" id="performanceDate" required>
                                 </div>
+                                <!-- NOVO CAMPO: DISCIPLINA -->
+                                <div class="form-section">
+                                    <label for="performanceSubject">Disciplina</label>
+                                    <select id="performanceSubject" required>
+                                        <option value="Matemática">Matemática</option>
+                                        <option value="Português">Português</option>
+                                        <option value="Inglês">Inglês</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid-2-col">
                                 <div class="form-section">
                                     <label for="performanceType">Tipo de Registro</label>
                                     <select id="performanceType" required>
-                                        <option value="" disabled selected>Selecione...</option>
-                                        <option value="PREVISAO">Previsão de Tempo</option>
                                         <option value="CORRECAO">Correção (100%)</option>
+                                        <option value="PREVISAO">Previsão de Tempo</option>
                                         <option value="REPETICAO">Repetição de Bloco</option>
                                         <option value="CONCLUSAO">Conclusão de Estágio</option>
                                         <option value="ELOGIO">Elogio / Comportamento</option>
@@ -325,13 +341,21 @@
                                 </div>
                                 <div class="form-section">
                                     <label for="performanceDetails">Detalhes</label>
-                                    <input type="text" id="performanceDetails" placeholder="Ex: Previsão 15min, concluiu em 12min" required>
+                                    <input type="text" id="performanceDetails" placeholder="Ex: Errou muito na pág 5" required>
                                 </div>
                             </div>
                             <button type="submit" class="btn">Adicionar Registro</button>
                         </form>
                         <div class="history-section">
-                            <h4>Histórico de Desempenho</h4>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h4>Histórico de Desempenho</h4>
+                                <select id="filterPerformance" class="form-input" style="width: auto; padding: 5px;">
+                                    <option value="all">Todas as Matérias</option>
+                                    <option value="Matemática">Matemática</option>
+                                    <option value="Português">Português</option>
+                                    <option value="Inglês">Inglês</option>
+                                </select>
+                            </div>
                             <div id="performanceHistory" class="history-list"></div>
                         </div>
                     </div>
@@ -354,7 +378,6 @@
         </div>
     </div>
 
-    <!-- Scripts -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
