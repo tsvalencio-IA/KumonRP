@@ -9,6 +9,8 @@
     <link rel="apple-touch-icon" href="icon.png">
     <meta name="theme-color" content="#0078c1">
     <link href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+    <!-- IMPORTANTE: Biblioteca para Gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body id="app-page">
     <!-- Tela de Login (Inalterada) -->
@@ -40,9 +42,13 @@
                 <div class="user-info">
                     <p id="userEmail" class="font-semibold"></p>
                     <div class="header-actions">
-                        <button id="system-options-btn" class="options-btn" title="Clique para opções de sistema (Reset)">
+                        <!-- NOVO BOTÃO DE DASHBOARD -->
+                        <button id="dashboard-btn" class="options-btn" style="border-color: var(--kumon-blue); color: var(--kumon-blue);">
+                            <i class='bx bxs-dashboard'></i>
+                            <span>Dashboard Geral</span>
+                        </button>
+                        <button id="system-options-btn" class="options-btn" title="Opções de sistema">
                             <i class='bx bx-cog'></i>
-                            <span>Opções</span>
                         </button>
                         <button id="logout-button" class="logout-btn">Sair</button>
                     </div>
@@ -51,7 +57,7 @@
         </header>
 
         <main>
-            <!-- Módulo de Atualização do "Cérebro" (Inalterado) -->
+            <!-- Módulo de Atualização do "Cérebro" -->
             <fieldset id="brainModule">
                 <legend>🧠 Atualizar 'Cérebro' da IA</legend>
                 <div class="form-section">
@@ -62,7 +68,7 @@
                 </div>
             </fieldset>
 
-            <!-- MÓDULO DE REUNIÕES (Modificado com Seleção de Aluno) -->
+            <!-- MÓDULO DE REUNIÕES -->
             <fieldset id="meetingsModule">
                 <legend>Diário de Reuniões de Pais</legend>
                 
@@ -71,16 +77,13 @@
                         <label for="meetingDate">📅 Data da Reunião</label>
                         <input type="date" id="meetingDate">
                     </div>
-                    <!-- **NOVO CAMPO** Seleção de Aluno -->
                     <div class="form-section">
                         <label for="meetingStudentSelect">👨‍🎓 Reunião Sobre (Aluno)</label>
                         <select id="meetingStudentSelect" required>
                             <option value="" disabled selected>Selecione um aluno...</option>
-                            <!-- Populado pelo JS -->
                         </select>
                     </div>
                 </div>
-
 
                 <div class="form-section">
                     <label for="audioUpload">📤 Enviar Áudio Gravado (Galeria)</label>
@@ -100,7 +103,7 @@
                 </div>
             </fieldset>
 
-            <!-- MÓDULO: Transcrição e Análise (Inalterado) -->
+            <!-- MÓDULO: Transcrição e Análise -->
             <fieldset id="transcriptionModule" class="section-box hidden">
                 <legend>🤖 Análise de Reunião</legend>
                 
@@ -114,7 +117,7 @@
                 </div>
             </fieldset>
 
-            <!-- Módulo de Gestão de Alunos (Inalterado) -->
+            <!-- Módulo de Gestão de Alunos -->
             <fieldset id="studentsModule">
                 <legend>Gestão de Alunos Inteligente</legend>
                 <div class="students-header">
@@ -131,7 +134,7 @@
                 </div>
             </fieldset>
 
-            <!-- Seção de Relatório (Inalterado, mas agora será populada com dados do aluno) -->
+            <!-- Seção de Relatório -->
             <section id="reportSection" class="section-box hidden">
                 <h2>📊 Relatório Final Gerado</h2>
                 <div id="reportContent" class="report-content">
@@ -148,7 +151,50 @@
         </footer>
     </div>
 
-    <!-- Modal de Aluno (Modificado para nova aba de Análise) -->
+    <!-- Modal de Dashboard (NOVO) -->
+    <div id="dashboardModal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h2>📊 Relatório Gerencial da Unidade</h2>
+                <button id="closeDashboardBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="grid-2-col">
+                    <!-- Gráfico 1: Distribuição de Alunos -->
+                    <div class="section-box">
+                        <h3>📈 Distribuição por Estágio (Mat)</h3>
+                        <canvas id="stagesChart"></canvas>
+                    </div>
+                    <!-- Gráfico 2: Termômetro Emocional -->
+                    <div class="section-box">
+                        <h3>🌡️ Termômetro da Unidade (IA)</h3>
+                        <canvas id="moodChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="grid-2-col" style="margin-top: 20px;">
+                    <!-- Lista de Risco -->
+                    <div class="section-box" style="border-left: 5px solid var(--kumon-red);">
+                        <h3 style="color: var(--kumon-red);">⚠️ Alunos em Atenção/Risco</h3>
+                        <p class="text-sm text-gray-500 mb-2">Baseado nas últimas análises da IA (palavras-chave: dificuldade, desistência, desmotivado).</p>
+                        <ul id="riskList" style="list-style: none; padding: 0;">
+                            <!-- Populado via JS -->
+                        </ul>
+                    </div>
+                    <!-- Lista de Destaques -->
+                    <div class="section-box" style="border-left: 5px solid var(--success);">
+                        <h3 style="color: var(--success);">⭐ Alunos Motivados/Destaques</h3>
+                        <p class="text-sm text-gray-500 mb-2">Baseado nas últimas análises da IA (palavras-chave: elogio, avanço, excelente).</p>
+                        <ul id="starList" style="list-style: none; padding: 0;">
+                            <!-- Populado via JS -->
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Aluno (Inalterado) -->
     <div id="studentModal" class="modal-overlay hidden">
         <div class="modal-content">
             <div class="modal-header">
@@ -157,7 +203,6 @@
             </div>
             <div class="modal-body">
                 <form id="studentForm">
-                    <!-- Campos de formulário inalterados -->
                     <input type="hidden" id="studentId">
                     <div class="grid-2-col">
                         <div class="form-section">
@@ -194,11 +239,9 @@
                         <button class="tab-btn active" data-tab="programming">📅 Programação</button>
                         <button class="tab-btn" data-tab="reports">📊 Boletins</button>
                         <button class="tab-btn" data-tab="performance">⚡ Desempenho</button>
-                        <!-- **ABA MODIFICADA** -->
                         <button class="tab-btn" data-tab="analysis">🤖 Última Análise (Reunião)</button>
                     </div>
 
-                    <!-- Abas de Programação, Boletins, Desempenho (Inalteradas) -->
                     <div id="tab-programming" class="tab-content active">
                         <h3>📅 Programação de Material</h3>
                         <form id="programmingForm" class="inline-form">
@@ -223,6 +266,7 @@
                             <div id="programmingHistory" class="history-list"></div>
                         </div>
                     </div>
+
                     <div id="tab-reports" class="tab-content">
                         <h3>📊 Boletins Escolares</h3>
                         <form id="reportForm" class="inline-form">
@@ -257,6 +301,7 @@
                             <div id="reportHistory" class="history-list"></div>
                         </div>
                     </div>
+
                     <div id="tab-performance" class="tab-content">
                         <h3>⚡ Registro de Desempenho</h3>
                         <form id="performanceForm" class="inline-form">
@@ -290,13 +335,11 @@
                         </div>
                     </div>
 
-                    <!-- **CONTEÚDO DA ABA MODIFICADO** -->
                     <div id="tab-analysis" class="tab-content">
                         <h3>🤖 Última Análise de Reunião (IA)</h3>
                         <div class="analysis-section">
                             <div class="analysis-header">
                                 <p>💡 <strong>Relatório JSON da última reunião salva:</strong></p>
-                                <!-- Botão de Refresh removido -->
                             </div>
                             <pre id="student-analysis-content" class="analysis-content">Nenhum relatório de reunião (com IA) salvo para este aluno.</pre>
                         </div>
@@ -310,7 +353,7 @@
         </div>
     </div>
 
-    <!-- Scripts (Inalterados) -->
+    <!-- Scripts -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
@@ -320,3 +363,5 @@
     <script src="js/auth.js"></script>
 </body>
 </html>
+
+
