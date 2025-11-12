@@ -1,20 +1,18 @@
 // App.js - Plataforma de Diário de Reuniões Kumon
 // RE-ARQUITETADO PARA FLUXO DE 2 ETAPAS (100% GEMINI)
-// VERSÃO SUPER ORIENTADORA: Prompt avançado com Psicologia e Método Kumon
+// VERSÃO DASHBOARD: Relatórios Gerenciais com Gráficos e Listas de Risco
 const App = {
     state: {
         userId: null,
         db: null, // Instância do Realtime Database
         students: {},
         currentStudentId: null,
-        reportData: null, // Armazena o JSON final da ANÁLISE
-        audioFile: null // Armazena o arquivo de áudio
+        reportData: null, 
+        audioFile: null,
+        charts: {} // Para armazenar instâncias dos gráficos
     },
     elements: {},
 
-    // =====================================================================
-    // ======================== INICIALIZAÇÃO E SETUP ======================
-    // =====================================================================
     init(user, databaseInstance) {
         const loginScreen = document.getElementById('login-screen');
         if (loginScreen) {
@@ -28,7 +26,7 @@ const App = {
         document.getElementById('userEmail').textContent = user.email;
         this.mapDOMElements();
         this.addEventListeners();
-        this.loadStudents(); // Agora também popula o dropdown de reuniões
+        this.loadStudents();
     },
 
     mapDOMElements() {
@@ -36,8 +34,15 @@ const App = {
             // Geral
             logoutButton: document.getElementById('logout-button'),
             systemOptionsBtn: document.getElementById('system-options-btn'),
+            dashboardBtn: document.getElementById('dashboard-btn'), // **NOVO**
             
-            // Diário de Reuniões (Etapa 1: Upload)
+            // Dashboard
+            dashboardModal: document.getElementById('dashboardModal'),
+            closeDashboardBtn: document.getElementById('closeDashboardBtn'),
+            riskList: document.getElementById('riskList'),
+            starList: document.getElementById('starList'),
+
+            // Diário de Reuniões
             meetingDate: document.getElementById('meetingDate'),
             meetingStudentSelect: document.getElementById('meetingStudentSelect'), 
             audioUpload: document.getElementById('audioUpload'),
@@ -45,7 +50,7 @@ const App = {
             additionalNotes: document.getElementById('additionalNotes'),
             transcribeAudioBtn: document.getElementById('transcribeAudioBtn'),
             
-            // Módulo de Transcrição (Etapa 2: Análise)
+            // Módulo de Transcrição
             transcriptionModule: document.getElementById('transcriptionModule'),
             transcriptionOutput: document.getElementById('transcriptionOutput'),
             analyzeTranscriptionBtn: document.getElementById('analyzeTranscriptionBtn'),
@@ -84,16 +89,17 @@ const App = {
         // Geral
         this.elements.logoutButton.addEventListener('click', () => firebase.auth().signOut());
         this.elements.systemOptionsBtn.addEventListener('click', () => this.promptForReset());
-        
-        // Diário de Reuniões (Novo Fluxo Gemini)
+        this.elements.dashboardBtn.addEventListener('click', () => this.openDashboard()); // **NOVO**
+        this.elements.closeDashboardBtn.addEventListener('click', () => this.closeDashboard()); // **NOVO**
+        this.elements.dashboardModal.addEventListener('click', (e) => { if (e.target === this.elements.dashboardModal) this.closeDashboard(); });
+
+        // Diário de Reuniões
         this.elements.audioUpload.addEventListener('change', () => this.handleFileUpload());
         this.elements.meetingStudentSelect.addEventListener('change', () => this.handleFileUpload());
-        this.elements.transcribeAudioBtn.addEventListener('click', () => this.transcribeAudioGemini()); // ETAPA 1
-        this.elements.analyzeTranscriptionBtn.addEventListener('click', () => this.analyzeTranscriptionGemini()); // ETAPA 2
+        this.elements.transcribeAudioBtn.addEventListener('click', () => this.transcribeAudioGemini()); 
+        this.elements.analyzeTranscriptionBtn.addEventListener('click', () => this.analyzeTranscriptionGemini()); 
         
         this.elements.downloadReportBtn.addEventListener('click', () => this.downloadReport());
-        
-        // Módulo Brain
         this.elements.uploadBrainFileBtn.addEventListener('click', () => this.handleBrainFileUpload());
         
         // Alunos
@@ -108,7 +114,125 @@ const App = {
         this.elements.performanceForm.addEventListener('submit', (e) => this.addHistoryEntry(e, 'performanceLog', this.elements.performanceForm)); 
         this.elements.studentModal.addEventListener('click', (e) => { if (e.target === this.elements.studentModal) this.closeStudentModal(); });
     },
-    
+
+    // =====================================================================
+    // ================== LÓGICA DO DASHBOARD (NOVO) =======================
+    // =====================================================================
+
+    openDashboard() {
+        this.elements.dashboardModal.classList.remove('hidden');
+        this.generateDashboardData();
+    },
+
+    closeDashboard() {
+        this.elements.dashboardModal.classList.add('hidden');
+    },
+
+    generateDashboardData() {
+        const students = Object.values(this.state.students);
+        
+        // 1. Dados para o Gráfico de Estágios (Matemática)
+        const stages = {};
+        students.forEach(s => {
+            if (s.mathStage) {
+                // Pega só a letra (Ex: "D150" -> "D")
+                const stageLetter = s.mathStage.charAt(0).toUpperCase();
+                stages[stageLetter] = (stages[stageLetter] || 0) + 1;
+            }
+        });
+
+        // 2. Dados de Risco/Motivação (Baseado na última análise da IA)
+        const riskStudents = [];
+        const starStudents = [];
+        let riskCount = 0;
+        let starCount = 0;
+        let neutralCount = 0;
+
+        students.forEach(s => {
+            if (s.meetingHistory && s.meetingHistory.length > 0) {
+                // Pega a última análise
+                const lastReport = s.meetingHistory[s.meetingHistory.length - 1];
+                // Converte o JSON em string para buscar palavras-chave
+                const reportText = JSON.stringify(lastReport).toLowerCase();
+
+                // Heurística simples para categorizar (baseado no texto da IA)
+                const hasRisk = reportText.includes("dificuldade") || reportText.includes("desmotivado") || reportText.includes("desistência") || reportText.includes("atraso") || reportText.includes("resistência");
+                const hasStar = reportText.includes("elogio") || reportText.includes("avanço") || reportText.includes("excelente") || reportText.includes("motivado") || reportText.includes("parabéns");
+
+                if (hasRisk) {
+                    riskStudents.push(s);
+                    riskCount++;
+                } else if (hasStar) {
+                    starStudents.push(s);
+                    starCount++;
+                } else {
+                    neutralCount++;
+                }
+            } else {
+                neutralCount++; // Sem análise ainda
+            }
+        });
+
+        // Renderizar Listas
+        this.renderDashboardList(this.elements.riskList, riskStudents, '⚠️');
+        this.renderDashboardList(this.elements.starList, starStudents, '⭐');
+
+        // Renderizar Gráficos (Chart.js)
+        this.renderCharts(stages, { risk: riskCount, star: starCount, neutral: neutralCount });
+    },
+
+    renderDashboardList(element, list, icon) {
+        element.innerHTML = list.length ? '' : '<li class="text-gray-500">Nenhum aluno nesta categoria.</li>';
+        list.forEach(s => {
+            const li = document.createElement('li');
+            li.style.padding = "5px 0";
+            li.style.borderBottom = "1px solid #eee";
+            li.innerHTML = `<strong>${icon} ${s.name}</strong> <span style="font-size:0.8em; color:#666;">(${s.responsible})</span>`;
+            // Ao clicar, abre a ficha do aluno
+            li.style.cursor = "pointer";
+            li.onclick = () => {
+                this.closeDashboard();
+                this.openStudentModal(Object.keys(this.state.students).find(key => this.state.students[key] === s));
+            };
+            element.appendChild(li);
+        });
+    },
+
+    renderCharts(stageData, moodData) {
+        // Destruir gráficos antigos se existirem (para não sobrepor)
+        if (this.state.charts.stages) this.state.charts.stages.destroy();
+        if (this.state.charts.mood) this.state.charts.mood.destroy();
+
+        // Gráfico de Estágios (Barra)
+        const ctxStages = document.getElementById('stagesChart').getContext('2d');
+        this.state.charts.stages = new Chart(ctxStages, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(stageData).sort(),
+                datasets: [{
+                    label: 'Qtd Alunos',
+                    data: Object.keys(stageData).sort().map(k => stageData[k]),
+                    backgroundColor: '#0078c1'
+                }]
+            },
+            options: { responsive: true }
+        });
+
+        // Gráfico de Humor (Pizza)
+        const ctxMood = document.getElementById('moodChart').getContext('2d');
+        this.state.charts.mood = new Chart(ctxMood, {
+            type: 'doughnut',
+            data: {
+                labels: ['Em Risco', 'Motivados', 'Neutros/Sem Análise'],
+                datasets: [{
+                    data: [moodData.risk, moodData.star, moodData.neutral],
+                    backgroundColor: ['#d62828', '#28a745', '#eaf6ff']
+                }]
+            },
+            options: { responsive: true }
+        });
+    },
+
     // =====================================================================
     // ================== LÓGICA DE UPLOAD DE ÁUDIO ===================
     // =====================================================================
@@ -132,10 +256,6 @@ const App = {
             this.elements.transcribeAudioBtn.disabled = true;
         }
     },
-
-    // =====================================================================
-    // ================== NOVA ARQUITETURA DE IA (GEMINI) ================
-    // =====================================================================
 
     fileToBase64(file) {
         return new Promise((resolve, reject) => {
@@ -215,7 +335,7 @@ const App = {
     // ETAPA 2: Analisar o Texto (Super Orientadora)
     async analyzeTranscriptionGemini() {
         const transcriptionText = this.elements.transcriptionOutput.value;
-        const notes = this.elements.additionalNotes.value; // Notas manuais do orientador
+        const notes = this.elements.additionalNotes.value; 
         
         if (!transcriptionText || transcriptionText.startsWith('Erro')) {
             alert('Transcrição inválida.');
@@ -238,14 +358,12 @@ const App = {
         try {
             const brainData = await this.fetchBrainData();
 
-            // Chama o Gemini com o SUPER PROMPT
             const analysis = await this.callGeminiForAnalysis(transcriptionText, notes, brainData || {}, studentData);
 
             if (analysis.erro) {
                 throw new Error(`Filtro Kumon: ${analysis.erro}`);
             }
 
-            // Correção do Bug de Meta
             if (!analysis.meta) analysis.meta = {};
             analysis.meta.meetingDate = this.elements.meetingDate.value || new Date().toISOString().split('T')[0];
             analysis.meta.studentId = studentId;
@@ -254,7 +372,6 @@ const App = {
             this.state.reportData = analysis;
             this.renderReport(analysis);
 
-            // Salvar no histórico do aluno
             if (!this.state.students[studentId].meetingHistory) {
                 this.state.students[studentId].meetingHistory = [];
             }
@@ -264,7 +381,6 @@ const App = {
 
             alert(`Análise da Orientadora salva com sucesso na ficha de ${studentData.name}!`);
             
-            // Limpeza
             this.elements.transcriptionOutput.value = "";
             this.elements.transcriptionModule.classList.add('hidden');
             this.elements.audioUpload.value = null;
@@ -277,11 +393,9 @@ const App = {
         }
     },
 
-    // O CÉREBRO DA SUPER ORIENTADORA
     async callGeminiForAnalysis(transcriptionText, manualNotes, brainData, studentData) {
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
         
-        // PROMPT SUPER ESPECIALISTA
         const textPrompt = `
 ATUE COMO: Orientadora Sênior do Método Kumon e Psicóloga Educacional com 20 anos de experiência.
 OBJETIVO: Analisar uma reunião de pais/alunos, cruzar com os dados técnicos da ficha do aluno e gerar um plano de ação pedagógico e comportamental.
@@ -298,29 +412,27 @@ Notas do Orientador: "${manualNotes}"
 
 ---
 SUAS DIRETRIZES RÍGIDAS (LEIS):
-1. **VERDADE ABSOLUTA:** Baseie-se APENAS nos dados acima. Não alucine. Se não souber, diga que faltam dados.
+1. **VERDADE ABSOLUTA:** Baseie-se APENAS nos dados acima. Não alucine.
 2. **MÉTODO KUMON:** Use a terminologia correta (Ponto de Partida, Estágio, Bloqueio, Repetição, Autodidatismo).
-3. **ANÁLISE CRUZADA:** - Compare o que foi dito na reunião com o "historico_desempenho" e "historico_boletins" do aluno.
-   - Se o pai diz que o aluno vai bem na escola, mas o boletim mostra nota baixa, APONTE essa discrepância.
-   - Se o aluno reclama de cansaço e o histórico mostra tempos altos (>30min), sugira revisão do Ponto de Partida.
-4. **PSICOLOGIA:** Analise o tom da reunião. Há ansiedade dos pais? Falta de rotina? Resistência do aluno?
+3. **ANÁLISE CRUZADA:** Compare o que foi dito na reunião com o "historico_desempenho" e "historico_boletins" do aluno.
+4. **PSICOLOGIA:** Analise o tom da reunião. Há ansiedade dos pais? Falta de rotina?
 5. **FILTRO DE RELEVÂNCIA:** Se o texto não for sobre educação, aluno ou Kumon, retorne JSON com campo "erro".
 
-RETORNE APENAS JSON (Sem markdown, sem texto antes/depois) NESTE FORMATO:
+RETORNE APENAS JSON (Sem markdown) NESTE FORMATO:
 {
   "resumo_executivo": "Resumo profissional da reunião focando nos pontos pedagógicos.",
-  "analise_psicopedagogica": "Análise comportamental. Ex: Pai ansioso, aluno desmotivado, falta de rotina em casa.",
+  "analise_psicopedagogica": "Análise comportamental. Ex: Pai ansioso, aluno desmotivado, falta de rotina.",
   "diagnostico_kumon": {
       "estagio_atual": "Análise do estágio atual versus o ideal.",
-      "ritmo": "O tempo de resolução está adequado? (Baseado no historico_desempenho)",
+      "ritmo": "O tempo de resolução está adequado?",
       "qualidade": "A precisão (notas 100%) está boa?"
   },
-  "discrepancias": "Liste contradições entre o que foi dito e o que está nos dados (ex: Pai diz que estuda todo dia, mas não há registro).",
+  "discrepancias": "Liste contradições entre o que foi dito e o que está nos dados.",
   "plano_acao_imediato": [
-      { "responsavel": "Orientador", "acao": "Ex: Revisar blocos D11-D20" },
-      { "responsavel": "Pais", "acao": "Ex: Estabelecer horário fixo às 14h" }
+      { "responsavel": "Orientador", "acao": "Ação sugerida" },
+      { "responsavel": "Pais", "acao": "Ação sugerida" }
   ],
-  "ajuste_programacao": "Sugestão técnica. Ex: Aumentar repetição no estágio E ou avançar para F.",
+  "ajuste_programacao": "Sugestão técnica de material.",
   "requer_validacao_humana": true
 }
 `;
@@ -347,10 +459,6 @@ RETORNE APENAS JSON (Sem markdown, sem texto antes/depois) NESTE FORMATO:
             throw new Error('IA retornou formato inválido.');
         }
     },
-    
-    // =====================================================================
-    // ================== FUNÇÕES DE APOIO (UI/DADOS) ======================
-    // =====================================================================
     
     renderReport(reportData) {
         this.elements.reportContent.textContent = JSON.stringify(reportData, null, 2);
@@ -401,7 +509,6 @@ RETORNE APENAS JSON (Sem markdown, sem texto antes/depois) NESTE FORMATO:
             const text = await file.text();
             const newBrain = JSON.parse(text);
             const currentBrain = await this.fetchBrainData();
-            // Merge simples
             const merged = { ...currentBrain, ...newBrain };
             await this.saveBrainData(merged);
             alert('Cérebro atualizado!');
@@ -474,7 +581,6 @@ RETORNE APENAS JSON (Sem markdown, sem texto antes/depois) NESTE FORMATO:
             
             this.loadStudentHistories(id);
             
-            // Exibe última análise
             const lastReport = s.meetingHistory ? s.meetingHistory[s.meetingHistory.length - 1] : null;
             this.elements.studentAnalysisContent.textContent = lastReport ? JSON.stringify(lastReport, null, 2) : "Sem análises.";
         } else {
