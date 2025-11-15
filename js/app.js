@@ -1,7 +1,7 @@
 /* =================================================================== */
-/* ARQUIVO DE LÓGICA UNIFICADO (V3.2.8 - FINAL ÍNTEGRA)
+/* ARQUIVO DE LÓGICA UNIFICADO (V3.2.9 - FINAL ÍNTEGRA 100%)
 /* ARQUITETURA: Refatorada (app.js + panels.js)
-/* FIX DE LOGIN (V3.2.7): Estável + Corrições de IDs e Strava.
+/* FIX DE LOGIN/STRAVA (V3.2.7/8): Estável + Completo.
 /* =================================================================== */
 
 // ===================================================================
@@ -26,7 +26,7 @@ const AppPrincipal = {
 
     // Inicialização principal: Decisão se está em app.html ou index.html (V2.2 Roteamento)
     init: () => {
-        console.log("Iniciando AppPrincipal V3.2.7...");
+        console.log("Iniciando AppPrincipal V3.2.9...");
         
         if (typeof window.firebaseConfig === 'undefined') {
             document.body.innerHTML = "<h1>Erro Crítico: O arquivo js/config.js não foi configurado.</h1>";
@@ -308,25 +308,644 @@ const AppPrincipal = {
     
     // MÓDULO 3/4: Lógica dos Modais (V3.2)
     openFeedbackModal: (workoutId, ownerId, workoutTitle) => {
-        // ... (Lógica completa do openFeedbackModal)
+        const { feedbackModal, feedbackModalTitle, workoutStatusSelect, workoutFeedbackText, commentsList, commentInput, photoUploadInput, saveFeedbackBtn, photoUploadFeedback, stravaDataDisplay } = AppPrincipal.elements;
+        
+        console.log(`Abrindo modal para treino: ${workoutId} (Dono: ${ownerId})`);
+        
+        AppPrincipal.state.modal.isOpen = true;
+        AppPrincipal.state.modal.currentWorkoutId = workoutId;
+        AppPrincipal.state.modal.currentOwnerId = ownerId;
+        AppPrincipal.state.stravaData = null;
+        
+        feedbackModalTitle.textContent = workoutTitle || "Feedback do Treino";
+        
+        workoutStatusSelect.value = 'planejado';
+        workoutFeedbackText.value = '';
+        photoUploadInput.value = null;
+        photoUploadFeedback.textContent = "";
+        stravaDataDisplay.classList.add('hidden');
+        commentsList.innerHTML = "<p>Carregando...</p>";
+        commentInput.value = '';
+        saveFeedbackBtn.disabled = false;
+        saveFeedbackBtn.textContent = "Salvar Feedback";
+        
+        const workoutRef = AppPrincipal.state.db.ref(`data/${ownerId}/workouts/${workoutId}`);
+        workoutRef.once('value', snapshot => {
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                workoutStatusSelect.value = data.status || 'planejado';
+                workoutFeedbackText.value = data.feedback || '';
+                if (data.stravaData) {
+                    AppPrincipal.displayStravaData(data.stravaData);
+                }
+            } else {
+                AppPrincipal.state.db.ref(`publicWorkouts/${workoutId}`).once('value', publicSnapshot => {
+                     if (publicSnapshot.exists()) {
+                        const data = publicSnapshot.val();
+                        workoutStatusSelect.value = data.status || 'planejado';
+                        workoutFeedbackText.value = data.feedback || '';
+                        if (data.stravaData) {
+                            AppPrincipal.displayStravaData(data.stravaData);
+                        }
+                     }
+                });
+            }
+        });
+        
+        const commentsRef = AppPrincipal.state.db.ref(`workoutComments/${workoutId}`);
+        AppPrincipal.state.listeners['modalComments'] = commentsRef;
+        
+        commentsRef.orderByChild('timestamp').on('value', snapshot => {
+            commentsList.innerHTML = "";
+            if (!snapshot.exists()) {
+                commentsList.innerHTML = "<p>Nenhum comentário ainda.</p>";
+                return;
+            }
+            
+            const isCurrentUserAdmin = AppPrincipal.state.userData.role === 'admin';
+            const isCurrentUserOwner = AppPrincipal.state.currentUser.uid === AppPrincipal.state.modal.currentOwnerId;
+
+            snapshot.forEach(childSnapshot => {
+                const data = childSnapshot.val();
+                
+                const isCommentFromAdmin = AppPrincipal.state.adminUIDs.hasOwnProperty(data.uid);
+
+                if (!isCurrentUserOwner && !isCurrentUserAdmin && isCommentFromAdmin) {
+                    return;
+                }
+
+                const item = document.createElement('div');
+                item.className = 'comment-item';
+                const date = new Date(data.timestamp).toLocaleString('pt-BR', { timeStyle: 'short', dateStyle: 'short' });
+                
+                const commenterName = AppPrincipal.state.userCache[data.uid]?.name || "Usuário";
+                
+                item.innerHTML = `
+                    <p><strong>${commenterName}:</strong> ${data.text}</p>
+                    <span>${date}</span>
+                `;
+                commentsList.appendChild(item);
+            });
+            commentsList.scrollTop = commentsList.scrollHeight;
+        });
+        
+        feedbackModal.classList.remove('hidden');
     },
     
     closeFeedbackModal: () => {
-        // ... (Lógica completa do closeFeedbackModal)
+        AppPrincipal.state.modal.isOpen = false;
+        AppPrincipal.elements.feedbackModal.classList.add('hidden');
+        
+        const listenerRef = AppPrincipal.state.listeners['modalComments'];
+        if (listenerRef && typeof listenerRef.off === 'function') {
+            listenerRef.off();
+            delete AppPrincipal.state.listeners['modalComments'];
+            console.log("Listener do modal de comentários limpo.");
+        }
     },
     
     handleFeedbackSubmit: async (e) => {
-        // ... (Lógica completa do handleFeedbackSubmit)
+        e.preventDefault();
+        const { workoutStatusSelect, workoutFeedbackText, photoUploadInput, saveFeedbackBtn } = AppPrincipal.elements;
+        const { currentWorkoutId, currentOwnerId } = AppPrincipal.state.modal;
+        
+        if (currentOwnerId !== AppPrincipal.state.currentUser.uid) {
+            alert("Você só pode salvar o feedback dos seus próprios treinos.");
+            return;
+        }
+
+        saveFeedbackBtn.disabled = true;
+        saveFeedbackBtn.textContent = "Salvando...";
+
+        try {
+            let imageUrl = null;
+            const file = photoUploadInput.files[0];
+            
+            if (file) {
+                saveFeedbackBtn.textContent = "Enviando foto...";
+                imageUrl = await AppPrincipal.uploadFileToCloudinary(file, 'workouts');
+            }
+
+            const feedbackData = {
+                status: workoutStatusSelect.value,
+                feedback: workoutFeedbackText.value,
+                realizadoAt: new Date().toISOString()
+            };
+            if (imageUrl) {
+                feedbackData.imageUrl = imageUrl;
+            }
+            if (AppPrincipal.state.stravaData) {
+                feedbackData.stravaData = AppPrincipal.state.stravaData;
+            }
+
+            const workoutRef = AppPrincipal.state.db.ref(`data/${currentOwnerId}/workouts/${currentWorkoutId}`);
+            
+            saveFeedbackBtn.textContent = "Atualizando treino...";
+            await workoutRef.update(feedbackData);
+            
+            if (feedbackData.status !== 'planejado') {
+                const snapshot = await workoutRef.once('value');
+                const workoutData = snapshot.val();
+                
+                const publicData = {
+                    ownerId: currentOwnerId,
+                    ownerName: AppPrincipal.state.userCache[currentOwnerId]?.name || AppPrincipal.state.userData.name,
+                    date: workoutData.date,
+                    title: workoutData.title,
+                    description: workoutData.description,
+                    status: workoutData.status,
+                    feedback: workoutData.feedback,
+                    realizadoAt: workoutData.realizadoAt,
+                    imageUrl: workoutData.imageUrl || null,
+                    stravaData: workoutData.stravaData || null
+                };
+                await AppPrincipal.state.db.ref(`publicWorkouts/${currentWorkoutId}`).set(publicData);
+            } else {
+                await AppPrincipal.state.db.ref(`publicWorkouts/${currentWorkoutId}`).remove();
+            }
+
+            console.log("Feedback salvo e feed atualizado!");
+            AppPrincipal.closeFeedbackModal();
+
+        } catch (err) {
+            console.error("Erro ao salvar feedback:", err);
+            alert("Erro ao salvar: " + err.message);
+            saveFeedbackBtn.disabled = false;
+            saveFeedbackBtn.textContent = "Salvar Feedback";
+        }
     },
     
     handleCommentSubmit: (e) => {
-        // ... (Lógica completa do handleCommentSubmit)
+        e.preventDefault();
+        const { commentInput } = AppPrincipal.elements;
+        const { currentWorkoutId } = AppPrincipal.state.modal;
+        const text = commentInput.value.trim();
+        
+        if (!text) return;
+
+        const commentData = {
+            uid: AppPrincipal.state.currentUser.uid,
+            name: AppPrincipal.state.userCache[AppPrincipal.state.currentUser.uid]?.name || AppPrincipal.state.userData.name,
+            text: text,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        };
+        
+        AppPrincipal.state.db.ref(`workoutComments/${currentWorkoutId}`).push(commentData)
+            .then(() => {
+                commentInput.value = "";
+            })
+            .catch(err => alert("Erro ao enviar comentário: " + err.message));
     },
 
-    // ... (RESTO DOS MÉTODOS DE MODAIS E UTILITÁRIOS: openLogActivityModal, fileToBase64, callGeminiTextAPI, etc.)
+    // ----- Modal Log Atividade (V2.9) -----
+    openLogActivityModal: () => {
+        AppPrincipal.elements.logActivityForm.reset();
+        AppPrincipal.elements.logActivityModal.classList.remove('hidden');
+        document.getElementById('log-activity-date').value = new Date().toISOString().split('T')[0];
+    },
+
+    closeLogActivityModal: () => {
+        AppPrincipal.elements.logActivityModal.classList.add('hidden');
+    },
+
+    handleLogActivitySubmit: async (e) => {
+        e.preventDefault();
+        const btn = AppPrincipal.elements.logActivityForm.querySelector('button');
+        btn.disabled = true;
+
+        const athleteId = AppPrincipal.state.currentUser.uid;
+        
+        try {
+            const workoutData = {
+                date: document.getElementById('log-activity-date').value,
+                title: document.getElementById('log-activity-title').value,
+                description: `(${document.getElementById('log-activity-type').value})`,
+                feedback: document.getElementById('log-activity-feedback').value,
+                createdBy: athleteId,
+                createdAt: new Date().toISOString(),
+                status: "realizado",
+                realizadoAt: new Date().toISOString(),
+                imageUrl: null,
+                stravaData: null
+            };
+            
+            if (!workoutData.date || !workoutData.title || !workoutData.feedback) {
+                 throw new Error("Data, Título e Feedback são obrigatórios.");
+            }
+
+            const newWorkoutRef = await AppPrincipal.state.db.ref(`data/${athleteId}/workouts`).push(workoutData);
+            const newWorkoutId = newWorkoutRef.key;
+
+            const publicData = {
+                ownerId: athleteId,
+                ownerName: AppPrincipal.state.userCache[athleteId]?.name || AppPrincipal.state.userData.name,
+                date: workoutData.date,
+                title: workoutData.title,
+                description: workoutData.description,
+                status: workoutData.status,
+                feedback: workoutData.feedback,
+                realizadoAt: workoutData.realizadoAt,
+                imageUrl: null,
+                stravaData: null
+            };
+            await AppPrincipal.state.db.ref(`publicWorkouts/${newWorkoutId}`).set(publicData);
+
+            console.log("Atividade manual registrada e publicada no feed.");
+            AppPrincipal.closeLogActivityModal();
+
+        } catch (err) {
+            alert("Erro ao salvar atividade: " + err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    // ----- Modal Quem Curtiu (V2.9) -----
+    openWhoLikedModal: (workoutId) => {
+        const { whoLikedModal, whoLikedList } = AppPrincipal.elements;
+        whoLikedList.innerHTML = "<li>Carregando...</li>";
+        whoLikedModal.classList.remove('hidden');
+
+        const likesRef = AppPrincipal.state.db.ref(`workoutLikes/${workoutId}`);
+        likesRef.once('value', async (snapshot) => {
+            if (!snapshot.exists()) {
+                whoLikedList.innerHTML = "<li>Ninguém curtiu ainda.</li>";
+                return;
+            }
+
+            whoLikedList.innerHTML = "";
+            const userCache = AppPrincipal.state.userCache;
+            
+            const promises = [];
+            snapshot.forEach(childSnapshot => {
+                const uid = childSnapshot.key;
+                
+                if (userCache[uid] && userCache[uid].name) {
+                    promises.push(Promise.resolve(userCache[uid].name));
+                } else {
+                    const userRef = AppPrincipal.state.db.ref(`users/${uid}/name`);
+                    promises.push(userRef.once('value').then(snap => snap.val() || "Usuário (ID: ..."+uid.slice(-4)+")"));
+                }
+            });
+
+            const names = await Promise.all(promises);
+            names.forEach(userName => {
+                const li = document.createElement('li');
+                li.textContent = userName;
+                whoLikedList.appendChild(li);
+            });
+        });
+    },
+
+    closeWhoLikedModal: () => {
+        AppPrincipal.elements.whoLikedModal.classList.add('hidden');
+    },
+
+    // ----- Modal Análise IA (V2.7) -----
+    openIaAnalysisModal: (analysisData = null) => {
+        const { iaAnalysisModal, iaAnalysisOutput, saveIaAnalysisBtn } = AppPrincipal.elements;
+        
+        if (analysisData) {
+            iaAnalysisOutput.textContent = analysisData.analysisResult;
+            AppPrincipal.state.currentAnalysisData = analysisData;
+            saveIaAnalysisBtn.classList.add('hidden');
+        } else {
+            iaAnalysisOutput.textContent = "Coletando dados do atleta...";
+            saveIaAnalysisBtn.classList.add('hidden');
+            AppPrincipal.state.currentAnalysisData = null;
+        }
+        
+        iaAnalysisModal.classList.remove('hidden');
+    },
+
+    closeIaAnalysisModal: () => {
+        AppPrincipal.elements.iaAnalysisModal.classList.add('hidden');
+        AppPrincipal.state.currentAnalysisData = null;
+    },
+    
+    // Salva Análise IA (V3.0 - Correção Bug 4)
+    handleSaveIaAnalysis: async () => {
+        const { saveIaAnalysisBtn } = AppPrincipal.elements;
+        const analysisData = AppPrincipal.state.currentAnalysisData;
+        
+        const athleteId = AdminPanel.state.selectedAthleteId; 
+
+        if (!analysisData || !athleteId) {
+            alert("ERRO: Dados da análise ou ID do atleta não encontrados.");
+            return;
+        }
+
+        saveIaAnalysisBtn.disabled = true;
+        saveIaAnalysisBtn.textContent = "Salvando...";
+
+        try {
+            const historyRef = AppPrincipal.state.db.ref(`iaAnalysisHistory/${athleteId}`);
+            await historyRef.push(analysisData);
+            
+            alert("Análise salva com sucesso!");
+            AppPrincipal.closeIaAnalysisModal();
+            
+            if (AppPrincipal.state.listeners['adminIaHistory']) {
+                AppPrincipal.state.listeners['adminIaHistory'].off();
+                delete AppPrincipal.state.listeners['adminIaHistory'];
+            }
+            
+            if (AdminPanel.elements.iaHistoryList) {
+                AdminPanel.loadIaHistory(athleteId);
+            }
+
+        } catch (err) {
+            console.error("Erro ao salvar análise:", err);
+            alert("Erro ao salvar: " + err.message);
+        } finally {
+            saveIaAnalysisBtn.disabled = false;
+            saveIaAnalysisBtn.textContent = "Salvar Análise";
+        }
+    },
+
+    // ----- Funções do Modal de Perfil (V3.0) -----
+    openProfileModal: () => {
+        const { profileModal, profileName, profileBio, profilePicPreview, profileUploadFeedback, saveProfileBtn } = AppPrincipal.elements;
+        const { userData } = AppPrincipal.state;
+        
+        if (!userData) return;
+
+        AppPrincipal.state.modal.newPhotoUrl = null;
+        profileUploadFeedback.textContent = "";
+        saveProfileBtn.disabled = false;
+        saveProfileBtn.textContent = "Salvar Perfil";
+
+        profileName.value = userData.name || '';
+        profileBio.value = userData.bio || '';
+        profilePicPreview.src = userData.photoUrl || 'https://placehold.co/150x150/4169E1/FFFFFF?text=Atleta';
+
+        profileModal.classList.remove('hidden');
+    },
+
+    closeProfileModal: () => {
+        AppPrincipal.elements.profileModal.classList.add('hidden');
+        AppPrincipal.state.modal.newPhotoUrl = null;
+    },
+    
+    handleProfilePhotoUpload: async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const { profileUploadFeedback, saveProfileBtn, profilePicPreview } = AppPrincipal.elements;
+
+        profileUploadFeedback.textContent = "Enviando foto...";
+        profileUploadFeedback.style.color = "var(--strava-orange)";
+        saveProfileBtn.disabled = true;
+
+        try {
+            const imageUrl = await AppPrincipal.uploadFileToCloudinary(file, 'profile');
+            
+            AppPrincipal.state.modal.newPhotoUrl = imageUrl;
+            profilePicPreview.src = imageUrl;
+            profileUploadFeedback.textContent = "Foto alterada. Clique em 'Salvar Perfil' para confirmar.";
+            profileUploadFeedback.style.color = "var(--success-color)";
+
+        } catch (err) {
+            console.error("Erro no upload da foto de perfil:", err);
+            profileUploadFeedback.textContent = "Falha no upload da foto.";
+            profileUploadFeedback.style.color = "var(--danger-color)";
+        } finally {
+            saveProfileBtn.disabled = false;
+            event.target.value = null;
+        }
+    },
+
+    handleProfileSubmit: async (e) => {
+        e.preventDefault();
+        const { saveProfileBtn, profileName, profileBio } = AppPrincipal.elements;
+        const { currentUser } = AppPrincipal.state;
+        
+        saveProfileBtn.disabled = true;
+        saveProfileBtn.textContent = "Salvando...";
+
+        try {
+            const newName = profileName.value.trim();
+            const newBio = profileBio.value.trim();
+            const newPhotoUrl = AppPrincipal.state.modal.newPhotoUrl;
+
+            if (!newName) {
+                throw new Error("O nome não pode ficar em branco.");
+            }
+
+            const updates = {};
+            updates[`/users/${currentUser.uid}/name`] = newName;
+            updates[`/users/${currentUser.uid}/bio`] = newBio;
+            
+            if (newPhotoUrl) {
+                updates[`/users/${currentUser.uid}/photoUrl`] = newPhotoUrl;
+            }
+            
+            await AppPrincipal.state.db.ref().update(updates);
+
+            AppPrincipal.state.userData.name = newName;
+            AppPrincipal.state.userData.bio = newBio;
+            if (newPhotoUrl) {
+                AppPrincipal.state.userData.photoUrl = newPhotoUrl;
+            }
+            
+            AppPrincipal.elements.userDisplay.textContent = newName;
+
+            console.log("Perfil salvo com sucesso.");
+            AppPrincipal.closeProfileModal();
+
+        } catch (err) {
+            console.error("Erro ao salvar perfil:", err);
+            alert("Erro ao salvar perfil: " + err.message);
+            saveProfileBtn.disabled = false;
+            saveProfileBtn.textContent = "Salvar Perfil";
+        }
+    },
+
+    // ===================================================================
+    // NOVO (V3.2): Funções do Modal de Visualização de Perfil
+    // ===================================================================
+    openViewProfileModal: (userId) => {
+        const { viewProfileModal, viewProfilePic, viewProfileName, viewProfileBio } = AppPrincipal.elements;
+        const userCache = AppPrincipal.state.userCache;
+
+        if (!userCache || !userCache[userId]) {
+            console.error("Dados do usuário não encontrados no cache:", userId);
+            return;
+        }
+
+        const userData = userCache[userId];
+        
+        viewProfilePic.src = userData.photoUrl || 'https://placehold.co/150x150/4169E1/FFFFFF?text=Atleta';
+        viewProfileName.textContent = userData.name || "Atleta";
+        viewProfileBio.textContent = userData.bio || "Este atleta ainda não escreveu uma biografia.";
+
+        viewProfileModal.classList.remove('hidden');
+    },
+
+    closeViewProfileModal: () => {
+        AppPrincipal.elements.viewProfileModal.classList.add('hidden');
+    },
+
+
+    // ===================================================================
+    // MÓDULO 4: Funções de IA (V3.0 - Cloudinary atualizado)
+    // ===================================================================
+
+    // Lida com upload de foto do treino (V2.6)
+    handlePhotoUpload: async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const { photoUploadFeedback, stravaDataDisplay, saveFeedbackBtn } = AppPrincipal.elements;
+        
+        AppPrincipal.state.stravaData = null;
+        stravaDataDisplay.classList.add('hidden');
+        photoUploadFeedback.textContent = "Analisando imagem com Gemini Vision...";
+        saveFeedbackBtn.disabled = true;
+
+        try {
+            const base64Data = await AppPrincipal.fileToBase64(file);
+            const mimeType = file.type;
+
+            const prompt = `
+                Analise esta imagem de um app de corrida (como Strava, Nike, etc.).
+                Extraia SOMENTE os seguintes dados: Distância (km), Tempo (hh:mm:ss ou mm:ss) e Ritmo/Pace (mm:ss /km).
+                
+                Responda APENAS com um objeto JSON. Se um dado não for encontrado, retorne 'null'.
+                
+                Formato de Resposta (JSON):
+                {
+                  "distancia": "X.XX km",
+                  "tempo": "XX:XX:XX",
+                  "ritmo": "X:XX /km"
+                }
+            `;
+            
+            const jsonResult = await AppPrincipal.callGeminiVisionAPI(prompt, base64Data, mimeType);
+            
+            const data = JSON.parse(jsonResult);
+            AppPrincipal.state.stravaData = data;
+            AppPrincipal.displayStravaData(data);
+            photoUploadFeedback.textContent = "Foto analisada com sucesso!";
+
+        } catch (err) {
+            console.error("Erro na IA Vision:", err);
+            photoUploadFeedback.textContent = "IA não conseguiu ler dados desta imagem.";
+            AppPrincipal.state.stravaData = null;
+            stravaDataDisplay.classList.add('hidden');
+        } finally {
+            saveFeedbackBtn.disabled = false;
+        }
+    },
+
+    // Converte arquivo para Base64 (V2.6)
+    fileToBase64: (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
+        });
+    },
+
+    // Exibe os dados extraídos no modal (V2.6)
+    displayStravaData: (data) => {
+        const { stravaDataDisplay } = AppPrincipal.elements;
+        document.getElementById('strava-data-distancia').textContent = `Distância: ${data.distancia || "N/A"}`;
+        document.getElementById('strava-data-tempo').textContent = `Tempo:     ${data.tempo || "N/A"}`;
+        document.getElementById('strava-data-ritmo').textContent = `Ritmo:     ${data.ritmo || "N/A"}`;
+        stravaDataDisplay.classList.remove('hidden');
+    },
+
+    // API Gemini Texto (V2.6)
+    callGeminiTextAPI: async (prompt) => {
+        if (!window.GEMINI_API_KEY || window.GEMINI_API_KEY.includes("COLE_SUA_CHAVE_GEMINI_AQUI")) {
+            throw new Error("API Key do Gemini não configurada em js/config.js");
+        }
+        
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
+        
+        const requestBody = {
+            "contents": [{ "parts": [{ "text": prompt }] }]
+        };
+
+        const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+        
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(`Erro API Gemini (Texto): ${err.error.message}`);
+        }
+        
+        const data = await response.json();
+        if (!data.candidates || data.candidates.length === 0) {
+            throw new Error("A IA (Texto) não retornou uma resposta.");
+        }
+        
+        return data.candidates[0].content.parts[0].text;
+    },
+
+    // API Gemini Vision (V2.6)
+    callGeminiVisionAPI: async (prompt, base64Data, mimeType) => {
+        if (!window.GEMINI_API_KEY || window.GEMINI_API_KEY.includes("COLE_SUA_CHAVE_GEMINI_AQUI")) {
+            throw new Error("API Key do Gemini não configurada em js/config.js");
+        }
+
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${window.GEMINI_API_KEY}`;
+        
+        const requestBody = {
+            "contents": [
+                {
+                    "parts": [
+                        { "text": prompt },
+                        {
+                            "inlineData": {
+                                "mimeType": mimeType,
+                                "data": base64Data
+                            }
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "responseMimeType": "application/json"
+            }
+        };
+
+        const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(`Erro API Gemini (Visão): ${err.error.message}`);
+        }
+
+        const data = await response.json();
+        if (!data.candidates || data.candidates.length === 0) {
+            throw new Error("A IA (Visão) não retornou uma resposta.");
+        }
+
+        return data.candidates[0].content.parts[0].text;
+    },
+    
+    // Cloudinary (V3.0 - Aceita 'folderName')
+    uploadFileToCloudinary: async (file, folderName = 'workouts') => {
+        if (!window.CLOUDINARY_CONFIG || !window.CLOUDINARY_CONFIG.cloudName || !window.CLOUDINARY_CONFIG.uploadPreset || window.CLOUDINARY_CONFIG.cloudName.includes("SEU_CLOUD_NAME")) {
+            throw new Error("Cloudinary não está configurado em js/config.js");
+        }
+        
+        const f = new FormData(); 
+        f.append('file', file); 
+        f.append('upload_preset', window.CLOUDINARY_CONFIG.uploadPreset); 
+        f.append('folder', `lerunners/${AppPrincipal.state.currentUser.uid}/${folderName}`);
+        
+        const r = await fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CONFIG.cloudName}/upload`, { method: 'POST', body: f });
+        if (!r.ok) throw new Error("Falha no upload para Cloudinary.");
+        
+        const data = await r.json();
+        return data.secure_url;
+    },
     
     // ===================================================================
-    // StravaLogic (Apenas o bloco de injeção no final do AppPrincipal)
+    // StravaLogic
     // ===================================================================
     handleStravaConnect: () => {
         if (typeof window.STRAVA_PUBLIC_CONFIG === 'undefined') {
