@@ -1,43 +1,49 @@
 /* =================================================================== */
-/* ARQUIVO DE LÓGICA UNIFICADO (V3.2.9 - ÍNTEGRA TOTAL 100%)
-/* RESTAURAÇÃO: Retorna à lógica de inicialização V2.2, adicionando Strava de forma limpa.
+/* ARQUIVO DE LÓGICA UNIFICADO (V3.2 - VER PERFIL PÚBLICO)
+/* ARQUITETURA: Refatorada (app.js + panels.js)
 /* =================================================================== */
 
 // ===================================================================
-// 1. AppPrincipal (O Cérebro) - Lógica de app.html
+// 1. AppPrincipal (O Cérebro)
 // ===================================================================
 const AppPrincipal = {
     state: {
-        currentUser: null,
-        userData: null,
+        currentUser: null, // O objeto 'user' do Auth
+        userData: null,    // O perfil de '/users/' (name, role, photoUrl, bio)
         db: null,
         auth: null,
-        listeners: {},
-        currentView: 'planilha',
-        adminUIDs: {},
-        userCache: {},
-        modal: { isOpen: false, currentWorkoutId: null, currentOwnerId: null, newPhotoUrl: null },
-        stravaData: null,
-        currentAnalysisData: null
+        listeners: {},     // Para limpar listeners do Firebase
+        currentView: 'planilha', // 'planilha' ou 'feed'
+        adminUIDs: {},     // Cache dos UIDs de admins
+        userCache: {},     // Cache de NOMES vindo de /users (V2.9)
+        modal: {
+            isOpen: false,
+            currentWorkoutId: null,
+            currentOwnerId: null,
+            newPhotoUrl: null // (V3.0): Para o upload da foto de perfil
+        },
+        stravaData: null, // (V2.6): Armazena dados extraídos da IA Vision
+        currentAnalysisData: null // (V2.6): Armazena a última análise da IA
     },
 
-    elements: {},
-
-    // Inicialização principal: Decisão se está em app.html ou index.html (V2.2 Roteamento)
     init: () => {
-        console.log("Iniciando AppPrincipal V3.2.9...");
+        console.log("Iniciando AppPrincipal V3.2 (Cérebro, Ver Perfil)...");
         
-        if (typeof window.firebaseConfig === 'undefined') {
-            document.body.innerHTML = "<h1>Erro Crítico: O arquivo js/config.js não foi configurado.</h1>";
+        // V2.5: Verifica a chave no 'window'
+        if (typeof window.firebaseConfig === 'undefined' || window.firebaseConfig.apiKey.includes("COLE_SUA_CHAVE")) {
+            console.error("ERRO CRÍTICO: config.js não carregado ou chaves do Firebase não configuradas.");
+            document.body.innerHTML = "<h1>Erro Crítico: O arquivo js/config.js não foi configurado. Cole suas chaves do Firebase.</h1>";
             return;
         }
 
         try {
-            if (firebase.apps.length === 0) {
+            // V2.5: Usa a chave do 'window'
+            if (!firebase.apps.length) {
                 firebase.initializeApp(window.firebaseConfig);
             }
         } catch (e) {
-            document.body.innerHTML = "<h1>Erro Crítico: Falha ao conectar com o Firebase.</h1>";
+            console.error('Falha ao inicializar Firebase:', e);
+            document.body.innerHTML = "<h1>Erro Crítico: Falha ao conectar com o Firebase. Verifique seu config.js.</h1>";
             return;
         }
 
@@ -45,18 +51,17 @@ const AppPrincipal = {
         AppPrincipal.state.db = firebase.database();
 
         // Roteamento: O script está na index.html ou app.html?
-        if (document.getElementById('login-form')) { // index.html
+        if (document.getElementById('login-form')) {
             console.log("Modo: Autenticação (index.html)");
-            AuthLogic.init(AppPrincipal.state.auth, AppPrincipal.state.db); // Chama o AuthLogic com os objetos
-        } else if (document.getElementById('app-container')) { // app.html
+            AuthLogic.init(AppPrincipal.state.auth, AppPrincipal.state.db);
+        } else if (document.getElementById('app-container')) {
             console.log("Modo: Plataforma (app.html)");
             AppPrincipal.initPlatform();
         }
     },
-    
+
     // Inicia a lógica da plataforma (app.html)
     initPlatform: () => {
-        // Mapeamento completo dos elementos de app.html (para evitar falhas)
         AppPrincipal.elements = {
             loader: document.getElementById('loader'),
             appContainer: document.getElementById('app-container'),
@@ -66,8 +71,9 @@ const AppPrincipal = {
             
             navPlanilhaBtn: document.getElementById('nav-planilha-btn'),
             navFeedBtn: document.getElementById('nav-feed-btn'),
-            navProfileBtn: document.getElementById('nav-profile-btn'),
+            navProfileBtn: document.getElementById('nav-profile-btn'), // (V3.0)
             
+            // Modal Feedback (V2.6)
             feedbackModal: document.getElementById('feedback-modal'),
             closeFeedbackModal: document.getElementById('close-feedback-modal'),
             feedbackModalTitle: document.getElementById('feedback-modal-title'),
@@ -75,27 +81,32 @@ const AppPrincipal = {
             workoutStatusSelect: document.getElementById('workout-status'),
             workoutFeedbackText: document.getElementById('workout-feedback-text'),
             photoUploadInput: document.getElementById('photo-upload-input'),
-            photoUploadFeedback: document.getElementById('photo-upload-feedback'),
-            stravaDataDisplay: document.getElementById('strava-data-display'),
+            photoUploadFeedback: document.getElementById('photo-upload-feedback'), // V2.6
+            stravaDataDisplay: document.getElementById('strava-data-display'), // V2.6
             saveFeedbackBtn: document.getElementById('save-feedback-btn'),
             
+            // Comentários V2
             commentForm: document.getElementById('comment-form'),
             commentInput: document.getElementById('comment-input'),
             commentsList: document.getElementById('comments-list'),
 
+            // Modal Log Atividade (V2.3)
             logActivityModal: document.getElementById('log-activity-modal'),
             closeLogActivityModal: document.getElementById('close-log-activity-modal'),
             logActivityForm: document.getElementById('log-activity-form'),
 
+            // Modal Quem Curtiu (V2.3)
             whoLikedModal: document.getElementById('who-liked-modal'),
             closeWhoLikedModal: document.getElementById('close-who-liked-modal'),
             whoLikedList: document.getElementById('who-liked-list'),
 
+            // Modal Análise IA (V2.6)
             iaAnalysisModal: document.getElementById('ia-analysis-modal'),
             closeIaAnalysisModal: document.getElementById('close-ia-analysis-modal'),
             iaAnalysisOutput: document.getElementById('ia-analysis-output'),
-            saveIaAnalysisBtn: document.getElementById('save-ia-analysis-btn'),
+            saveIaAnalysisBtn: document.getElementById('save-ia-analysis-btn'), // V2.6
 
+            // Modal de Perfil (V3.0)
             profileModal: document.getElementById('profile-modal'),
             closeProfileModal: document.getElementById('close-profile-modal'),
             profileForm: document.getElementById('profile-form'),
@@ -106,6 +117,7 @@ const AppPrincipal = {
             profileBio: document.getElementById('profile-bio'),
             saveProfileBtn: document.getElementById('save-profile-btn'),
 
+            // NOVO (V3.2): Modal de Visualização de Perfil
             viewProfileModal: document.getElementById('view-profile-modal'),
             closeViewProfileModal: document.getElementById('close-view-profile-modal'),
             viewProfilePic: document.getElementById('view-profile-pic'),
@@ -118,7 +130,7 @@ const AppPrincipal = {
         AppPrincipal.elements.navPlanilhaBtn.addEventListener('click', () => AppPrincipal.navigateTo('planilha'));
         AppPrincipal.elements.navFeedBtn.addEventListener('click', () => AppPrincipal.navigateTo('feed'));
         
-        // Listeners dos Modais
+        // Listeners do Modal Feedback
         AppPrincipal.elements.closeFeedbackModal.addEventListener('click', AppPrincipal.closeFeedbackModal);
         AppPrincipal.elements.feedbackForm.addEventListener('submit', AppPrincipal.handleFeedbackSubmit);
         AppPrincipal.elements.commentForm.addEventListener('submit', AppPrincipal.handleCommentSubmit);
@@ -127,23 +139,27 @@ const AppPrincipal = {
         });
         AppPrincipal.elements.photoUploadInput.addEventListener('change', AppPrincipal.handlePhotoUpload);
 
+        // Listeners Modal Log Atividade (V2.3)
         AppPrincipal.elements.closeLogActivityModal.addEventListener('click', AppPrincipal.closeLogActivityModal);
         AppPrincipal.elements.logActivityForm.addEventListener('submit', AppPrincipal.handleLogActivitySubmit);
         AppPrincipal.elements.logActivityModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.logActivityModal) AppPrincipal.closeLogActivityModal();
         });
 
+        // Listeners Modal Quem Curtiu (V2.3)
         AppPrincipal.elements.closeWhoLikedModal.addEventListener('click', AppPrincipal.closeWhoLikedModal);
         AppPrincipal.elements.whoLikedModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.whoLikedModal) AppPrincipal.closeWhoLikedModal();
         });
 
+        // Listeners Modal Análise IA (V2.6)
         AppPrincipal.elements.closeIaAnalysisModal.addEventListener('click', AppPrincipal.closeIaAnalysisModal);
         AppPrincipal.elements.iaAnalysisModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.iaAnalysisModal) AppPrincipal.closeIaAnalysisModal();
         });
         AppPrincipal.elements.saveIaAnalysisBtn.addEventListener('click', AppPrincipal.handleSaveIaAnalysis);
 
+        // Listeners Modal Perfil (V3.0)
         AppPrincipal.elements.navProfileBtn.addEventListener('click', AppPrincipal.openProfileModal);
         AppPrincipal.elements.closeProfileModal.addEventListener('click', AppPrincipal.closeProfileModal);
         AppPrincipal.elements.profileModal.addEventListener('click', (e) => {
@@ -152,6 +168,7 @@ const AppPrincipal = {
         AppPrincipal.elements.profileForm.addEventListener('submit', AppPrincipal.handleProfileSubmit);
         AppPrincipal.elements.profilePicUpload.addEventListener('change', AppPrincipal.handleProfilePhotoUpload);
 
+        // NOVO (V3.2): Listeners Modal Visualização de Perfil
         AppPrincipal.elements.closeViewProfileModal.addEventListener('click', AppPrincipal.closeViewProfileModal);
         AppPrincipal.elements.viewProfileModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.viewProfileModal) AppPrincipal.closeViewProfileModal();
@@ -171,6 +188,7 @@ const AppPrincipal = {
             console.log("Cache de Admins carregado:", Object.keys(AppPrincipal.state.adminUIDs));
         });
 
+        // Lê de /users, (V2.9)
         const usersRef = AppPrincipal.state.db.ref('users');
         AppPrincipal.state.listeners['cacheUsers'] = usersRef;
         usersRef.on('value', snapshot => {
@@ -183,7 +201,7 @@ const AppPrincipal = {
     handlePlatformAuthStateChange: (user) => {
         if (!user) {
             console.log("Guardião (Plataforma): Acesso negado. Redirecionando para login.");
-            AppPrincipal.cleanupListeners(false);
+            AppPrincipal.cleanupListeners(false); // Limpa TUDO ao deslogar
             window.location.href = 'index.html';
             return;
         }
@@ -192,18 +210,24 @@ const AppPrincipal = {
         AppPrincipal.state.currentUser = user;
         const uid = user.uid;
         
+        // Carrega caches (agora com listeners corretos)
         AppPrincipal.loadCaches();
 
+        // 1. É Admin?
         AppPrincipal.state.db.ref('admins/' + uid).once('value', adminSnapshot => {
             if (adminSnapshot.exists() && adminSnapshot.val() === true) {
                 
+                // Garante que o Admin tenha um perfil em /users (V2.9)
                 AppPrincipal.state.db.ref('users/' + uid).once('value', userSnapshot => {
                     let adminName;
                     if (userSnapshot.exists()) {
                         adminName = userSnapshot.val().name;
+                        // (V3.0): Salva todos os dados do admin
                         AppPrincipal.state.userData = { ...userSnapshot.val(), uid: uid };
                     } else {
-                        adminName = user.email;
+                        // (V2.9) FIX: Criar perfil se não existir
+                        console.warn(`Admin ${user.email} não encontrado em /users. Criando perfil...`);
+                        adminName = user.email; // Nome temporário
                         const adminProfile = {
                             name: adminName,
                             email: user.email,
@@ -211,10 +235,11 @@ const AppPrincipal = {
                             createdAt: new Date().toISOString()
                         };
                         AppPrincipal.state.db.ref('users/' + uid).set(adminProfile);
-                        AppPrincipal.state.userData = adminProfile;
+                        AppPrincipal.state.userData = adminProfile; // Salva localmente
                     }
                     
                     AppPrincipal.elements.userDisplay.textContent = `${adminName} (Coach)`;
+                    // (V3.0): Controla a view (para esconder o botão "Meu Perfil")
                     appContainer.classList.add('admin-view');
                     appContainer.classList.remove('atleta-view');
                     AppPrincipal.navigateTo('planilha');
@@ -222,13 +247,15 @@ const AppPrincipal = {
                 return;
             }
 
+            // 2. É Atleta Aprovado?
             AppPrincipal.state.db.ref('users/' + uid).once('value', userSnapshot => {
                 if (userSnapshot.exists()) {
                     AppPrincipal.state.userData = { ...userSnapshot.val(), uid: uid };
                     AppPrincipal.elements.userDisplay.textContent = `${AppPrincipal.state.userData.name}`;
+                    // (V3.0): Controla a view (para mostrar o botão "Meu Perfil")
                     appContainer.classList.add('atleta-view');
                     appContainer.classList.remove('admin-view');
-                    AppPrincipal.navigateTo('planilha');
+                    AppPrincipal.navigateTo('planilha'); // Atleta começa na planilha
                 } else {
                     console.warn("Status: PENDENTE/REJEITADO. Voltando ao login.");
                     AppPrincipal.handleLogout(); 
@@ -241,9 +268,10 @@ const AppPrincipal = {
     navigateTo: (page) => {
         const { mainContent, loader, appContainer, navPlanilhaBtn, navFeedBtn } = AppPrincipal.elements;
         mainContent.innerHTML = ""; 
-        AppPrincipal.cleanupListeners(true);
+        AppPrincipal.cleanupListeners(true); // Limpa listeners de painel
         AppPrincipal.state.currentView = page;
 
+        // Atualiza botões de navegação
         navPlanilhaBtn.classList.toggle('active', page === 'planilha');
         navFeedBtn.classList.toggle('active', page === 'feed');
 
@@ -281,39 +309,46 @@ const AppPrincipal = {
 
     handleLogout: () => {
         console.log("Saindo...");
-        AppPrincipal.cleanupListeners(false);
+        AppPrincipal.cleanupListeners(false); // Limpa TODOS os listeners
         AppPrincipal.state.auth.signOut().catch(err => console.error("Erro ao sair:", err));
     },
 
+    // Limpeza de listeners (V2.9)
     cleanupListeners: (panelOnly = false) => {
         Object.keys(AppPrincipal.state.listeners).forEach(key => {
             const listenerRef = AppPrincipal.state.listeners[key];
             
-            if (panelOnly && (key === 'cacheAdmins' || key === 'cacheUsers')) {
+            if (panelOnly && (key === 'cacheAdmins' || key === 'cacheUsers')) { // V2.9: Protege 'cacheUsers'
                 return; 
             }
             
             if (listenerRef && typeof listenerRef.off === 'function') {
-                listenerRef.off();
+                listenerRef.off(); // Desliga o listener
             }
             delete AppPrincipal.state.listeners[key];
         });
         console.log(panelOnly ? "Listeners de painel limpos." : "TODOS os listeners limpos.");
     },
     
+    // ===================================================================
     // MÓDULO 3/4: Lógica dos Modais (V3.2)
+    // ===================================================================
+    
+    // ----- Modal Feedback (V2.8) -----
     openFeedbackModal: (workoutId, ownerId, workoutTitle) => {
         const { feedbackModal, feedbackModalTitle, workoutStatusSelect, workoutFeedbackText, commentsList, commentInput, photoUploadInput, saveFeedbackBtn, photoUploadFeedback, stravaDataDisplay } = AppPrincipal.elements;
         
         console.log(`Abrindo modal para treino: ${workoutId} (Dono: ${ownerId})`);
         
+        // Salva o estado atual no Modal
         AppPrincipal.state.modal.isOpen = true;
         AppPrincipal.state.modal.currentWorkoutId = workoutId;
         AppPrincipal.state.modal.currentOwnerId = ownerId;
-        AppPrincipal.state.stravaData = null;
+        AppPrincipal.state.stravaData = null; // Limpa dados do Strava
         
         feedbackModalTitle.textContent = workoutTitle || "Feedback do Treino";
         
+        // Limpa o modal
         workoutStatusSelect.value = 'planejado';
         workoutFeedbackText.value = '';
         photoUploadInput.value = null;
@@ -324,16 +359,19 @@ const AppPrincipal = {
         saveFeedbackBtn.disabled = false;
         saveFeedbackBtn.textContent = "Salvar Feedback";
         
+        // 1. Carrega os dados do treino (status e feedback)
         const workoutRef = AppPrincipal.state.db.ref(`data/${ownerId}/workouts/${workoutId}`);
         workoutRef.once('value', snapshot => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
                 workoutStatusSelect.value = data.status || 'planejado';
                 workoutFeedbackText.value = data.feedback || '';
+                // NOVO (V2.6): Se já tiver dados do Strava, exibe
                 if (data.stravaData) {
                     AppPrincipal.displayStravaData(data.stravaData);
                 }
             } else {
+                // Tenta buscar nos publicWorkouts se for um treino manual
                 AppPrincipal.state.db.ref(`publicWorkouts/${workoutId}`).once('value', publicSnapshot => {
                      if (publicSnapshot.exists()) {
                         const data = publicSnapshot.val();
@@ -347,8 +385,10 @@ const AppPrincipal = {
             }
         });
         
+        // 2. Carrega os Comentários (do nó /workoutComments/)
         const commentsRef = AppPrincipal.state.db.ref(`workoutComments/${workoutId}`);
-        AppPrincipal.state.listeners['modalComments'] = commentsRef;
+        
+        AppPrincipal.state.listeners['modalComments'] = commentsRef; // V2.8
         
         commentsRef.orderByChild('timestamp').on('value', snapshot => {
             commentsList.innerHTML = "";
@@ -362,17 +402,18 @@ const AppPrincipal = {
 
             snapshot.forEach(childSnapshot => {
                 const data = childSnapshot.val();
-                
                 const isCommentFromAdmin = AppPrincipal.state.adminUIDs.hasOwnProperty(data.uid);
 
+                // REGRA DE PRIVACIDADE:
                 if (!isCurrentUserOwner && !isCurrentUserAdmin && isCommentFromAdmin) {
-                    return;
+                    return; // Esconde comentários de admins (exceto para o dono ou outro admin)
                 }
 
                 const item = document.createElement('div');
                 item.className = 'comment-item';
                 const date = new Date(data.timestamp).toLocaleString('pt-BR', { timeStyle: 'short', dateStyle: 'short' });
                 
+                // V2.9: Usa o userCache para o nome
                 const commenterName = AppPrincipal.state.userCache[data.uid]?.name || "Usuário";
                 
                 item.innerHTML = `
@@ -381,12 +422,13 @@ const AppPrincipal = {
                 `;
                 commentsList.appendChild(item);
             });
-            commentsList.scrollTop = commentsList.scrollHeight;
+            commentsList.scrollTop = commentsList.scrollHeight; // Rola para o final
         });
         
         feedbackModal.classList.remove('hidden');
     },
     
+    // Limpa o listener do modal (V2.8)
     closeFeedbackModal: () => {
         AppPrincipal.state.modal.isOpen = false;
         AppPrincipal.elements.feedbackModal.classList.add('hidden');
@@ -399,6 +441,7 @@ const AppPrincipal = {
         }
     },
     
+    // Salva feedback (V3.0)
     handleFeedbackSubmit: async (e) => {
         e.preventDefault();
         const { workoutStatusSelect, workoutFeedbackText, photoUploadInput, saveFeedbackBtn } = AppPrincipal.elements;
@@ -416,11 +459,14 @@ const AppPrincipal = {
             let imageUrl = null;
             const file = photoUploadInput.files[0];
             
+            // 1. Faz upload da imagem (se existir)
             if (file) {
                 saveFeedbackBtn.textContent = "Enviando foto...";
+                // (V3.0): Especifica a pasta 'workouts'
                 imageUrl = await AppPrincipal.uploadFileToCloudinary(file, 'workouts');
             }
 
+            // 2. Prepara dados
             const feedbackData = {
                 status: workoutStatusSelect.value,
                 feedback: workoutFeedbackText.value,
@@ -435,15 +481,18 @@ const AppPrincipal = {
 
             const workoutRef = AppPrincipal.state.db.ref(`data/${currentOwnerId}/workouts/${currentWorkoutId}`);
             
+            // 3. Atualiza o nó PRIVADO
             saveFeedbackBtn.textContent = "Atualizando treino...";
             await workoutRef.update(feedbackData);
             
+            // 4. Atualiza o nó PÚBLICO
             if (feedbackData.status !== 'planejado') {
                 const snapshot = await workoutRef.once('value');
                 const workoutData = snapshot.val();
                 
                 const publicData = {
                     ownerId: currentOwnerId,
+                    // V2.9: Pega o nome do userCache
                     ownerName: AppPrincipal.state.userCache[currentOwnerId]?.name || AppPrincipal.state.userData.name,
                     date: workoutData.date,
                     title: workoutData.title,
@@ -452,10 +501,11 @@ const AppPrincipal = {
                     feedback: workoutData.feedback,
                     realizadoAt: workoutData.realizadoAt,
                     imageUrl: workoutData.imageUrl || null,
-                    stravaData: workoutData.stravaData || null
+                    stravaData: workoutData.stravaData || null // V2.6
                 };
                 await AppPrincipal.state.db.ref(`publicWorkouts/${currentWorkoutId}`).set(publicData);
             } else {
+                // Se voltou para "planejado", remove do feed público
                 await AppPrincipal.state.db.ref(`publicWorkouts/${currentWorkoutId}`).remove();
             }
 
@@ -470,6 +520,7 @@ const AppPrincipal = {
         }
     },
     
+    // ----- Modal Comentários (V2.9) -----
     handleCommentSubmit: (e) => {
         e.preventDefault();
         const { commentInput } = AppPrincipal.elements;
@@ -480,6 +531,7 @@ const AppPrincipal = {
 
         const commentData = {
             uid: AppPrincipal.state.currentUser.uid,
+            // V2.9: Pega o nome do userCache
             name: AppPrincipal.state.userCache[AppPrincipal.state.currentUser.uid]?.name || AppPrincipal.state.userData.name,
             text: text,
             timestamp: firebase.database.ServerValue.TIMESTAMP
@@ -487,7 +539,7 @@ const AppPrincipal = {
         
         AppPrincipal.state.db.ref(`workoutComments/${currentWorkoutId}`).push(commentData)
             .then(() => {
-                commentInput.value = "";
+                commentInput.value = ""; // Limpa o input
             })
             .catch(err => alert("Erro ao enviar comentário: " + err.message));
     },
@@ -533,6 +585,7 @@ const AppPrincipal = {
 
             const publicData = {
                 ownerId: athleteId,
+                // V2.9: Pega o nome do userCache
                 ownerName: AppPrincipal.state.userCache[athleteId]?.name || AppPrincipal.state.userData.name,
                 date: workoutData.date,
                 title: workoutData.title,
@@ -568,8 +621,8 @@ const AppPrincipal = {
                 return;
             }
 
-            whoLikedList.innerHTML = "";
-            const userCache = AppPrincipal.state.userCache;
+            whoLikedList.innerHTML = ""; // Limpa o "Carregando"
+            const userCache = AppPrincipal.state.userCache; // V2.9
             
             const promises = [];
             snapshot.forEach(childSnapshot => {
@@ -601,10 +654,12 @@ const AppPrincipal = {
         const { iaAnalysisModal, iaAnalysisOutput, saveIaAnalysisBtn } = AppPrincipal.elements;
         
         if (analysisData) {
+            // Modo "Visualização"
             iaAnalysisOutput.textContent = analysisData.analysisResult;
             AppPrincipal.state.currentAnalysisData = analysisData;
             saveIaAnalysisBtn.classList.add('hidden');
         } else {
+            // Modo "Nova Análise"
             iaAnalysisOutput.textContent = "Coletando dados do atleta...";
             saveIaAnalysisBtn.classList.add('hidden');
             AppPrincipal.state.currentAnalysisData = null;
@@ -640,13 +695,16 @@ const AppPrincipal = {
             alert("Análise salva com sucesso!");
             AppPrincipal.closeIaAnalysisModal();
             
+            // (V3.0 - Bug 4): Limpa o listener antigo ANTES de recarregar
             if (AppPrincipal.state.listeners['adminIaHistory']) {
                 AppPrincipal.state.listeners['adminIaHistory'].off();
                 delete AppPrincipal.state.listeners['adminIaHistory'];
+                console.log("Listener de Histórico de IA limpo para recarga.");
             }
             
+            // Recarrega o histórico de IA (se a aba estiver visível)
             if (AdminPanel.elements.iaHistoryList) {
-                AdminPanel.loadIaHistory(athleteId);
+                AdminPanel.loadIaHistory(athleteId); // Agora é seguro chamar
             }
 
         } catch (err) {
@@ -665,11 +723,13 @@ const AppPrincipal = {
         
         if (!userData) return;
 
+        // Reseta o estado
         AppPrincipal.state.modal.newPhotoUrl = null;
         profileUploadFeedback.textContent = "";
         saveProfileBtn.disabled = false;
         saveProfileBtn.textContent = "Salvar Perfil";
 
+        // Preenche com dados atuais
         profileName.value = userData.name || '';
         profileBio.value = userData.bio || '';
         profilePicPreview.src = userData.photoUrl || 'https://placehold.co/150x150/4169E1/FFFFFF?text=Atleta';
@@ -679,7 +739,7 @@ const AppPrincipal = {
 
     closeProfileModal: () => {
         AppPrincipal.elements.profileModal.classList.add('hidden');
-        AppPrincipal.state.modal.newPhotoUrl = null;
+        AppPrincipal.state.modal.newPhotoUrl = null; // Limpa URL pendente
     },
     
     handleProfilePhotoUpload: async (event) => {
@@ -693,10 +753,11 @@ const AppPrincipal = {
         saveProfileBtn.disabled = true;
 
         try {
+            // Usa a pasta 'profile'
             const imageUrl = await AppPrincipal.uploadFileToCloudinary(file, 'profile');
             
-            AppPrincipal.state.modal.newPhotoUrl = imageUrl;
-            profilePicPreview.src = imageUrl;
+            AppPrincipal.state.modal.newPhotoUrl = imageUrl; // Salva URL para o submit
+            profilePicPreview.src = imageUrl; // Atualiza preview
             profileUploadFeedback.textContent = "Foto alterada. Clique em 'Salvar Perfil' para confirmar.";
             profileUploadFeedback.style.color = "var(--success-color)";
 
@@ -706,7 +767,7 @@ const AppPrincipal = {
             profileUploadFeedback.style.color = "var(--danger-color)";
         } finally {
             saveProfileBtn.disabled = false;
-            event.target.value = null;
+            event.target.value = null; // Limpa o input
         }
     },
 
@@ -735,14 +796,17 @@ const AppPrincipal = {
                 updates[`/users/${currentUser.uid}/photoUrl`] = newPhotoUrl;
             }
             
+            // Salva no Firebase
             await AppPrincipal.state.db.ref().update(updates);
 
+            // Atualiza o estado local
             AppPrincipal.state.userData.name = newName;
             AppPrincipal.state.userData.bio = newBio;
             if (newPhotoUrl) {
                 AppPrincipal.state.userData.photoUrl = newPhotoUrl;
             }
             
+            // Atualiza o header
             AppPrincipal.elements.userDisplay.textContent = newName;
 
             console.log("Perfil salvo com sucesso.");
@@ -756,7 +820,9 @@ const AppPrincipal = {
         }
     },
 
-    // ----- Funções do Modal de Visualização de Perfil (V3.2) -----
+    // ===================================================================
+    // NOVO (V3.2): Funções do Modal de Visualização de Perfil
+    // ===================================================================
     openViewProfileModal: (userId) => {
         const { viewProfileModal, viewProfilePic, viewProfileName, viewProfileBio } = AppPrincipal.elements;
         const userCache = AppPrincipal.state.userCache;
@@ -768,6 +834,7 @@ const AppPrincipal = {
 
         const userData = userCache[userId];
         
+        // Preenche o modal
         viewProfilePic.src = userData.photoUrl || 'https://placehold.co/150x150/4169E1/FFFFFF?text=Atleta';
         viewProfileName.textContent = userData.name || "Atleta";
         viewProfileBio.textContent = userData.bio || "Este atleta ainda não escreveu uma biografia.";
@@ -780,7 +847,9 @@ const AppPrincipal = {
     },
 
 
-    // ----- Funções de IA (V3.0 - Cloudinary atualizado) -----
+    // ===================================================================
+    // MÓDULO 4: Funções de IA (V3.0 - Cloudinary atualizado)
+    // ===================================================================
 
     // Lida com upload de foto do treino (V2.6)
     handlePhotoUpload: async (event) => {
@@ -789,10 +858,11 @@ const AppPrincipal = {
 
         const { photoUploadFeedback, stravaDataDisplay, saveFeedbackBtn } = AppPrincipal.elements;
         
+        // Limpa o estado anterior
         AppPrincipal.state.stravaData = null;
         stravaDataDisplay.classList.add('hidden');
         photoUploadFeedback.textContent = "Analisando imagem com Gemini Vision...";
-        saveFeedbackBtn.disabled = true;
+        saveFeedbackBtn.disabled = true; // Desabilita salvar ENQUANTO analisa
 
         try {
             const base64Data = await AppPrincipal.fileToBase64(file);
@@ -814,18 +884,19 @@ const AppPrincipal = {
             
             const jsonResult = await AppPrincipal.callGeminiVisionAPI(prompt, base64Data, mimeType);
             
+            // Tenta parsear a resposta
             const data = JSON.parse(jsonResult);
-            AppPrincipal.state.stravaData = data;
-            AppPrincipal.displayStravaData(data);
+            AppPrincipal.state.stravaData = data; // Salva os dados extraídos no state
+            AppPrincipal.displayStravaData(data); // Mostra no modal
             photoUploadFeedback.textContent = "Foto analisada com sucesso!";
 
         } catch (err) {
             console.error("Erro na IA Vision:", err);
             photoUploadFeedback.textContent = "IA não conseguiu ler dados desta imagem.";
-            AppPrincipal.state.stravaData = null;
+            AppPrincipal.state.stravaData = null; // Garante que esteja nulo se falhar
             stravaDataDisplay.classList.add('hidden');
         } finally {
-            saveFeedbackBtn.disabled = false;
+            saveFeedbackBtn.disabled = false; // Reabilita o botão "Salvar"
         }
     },
 
@@ -834,7 +905,7 @@ const AppPrincipal = {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Pega só o data
             reader.onerror = error => reject(error);
         });
     },
@@ -850,6 +921,7 @@ const AppPrincipal = {
 
     // API Gemini Texto (V2.6)
     callGeminiTextAPI: async (prompt) => {
+        // V2.5: Lê a chave do 'window'
         if (!window.GEMINI_API_KEY || window.GEMINI_API_KEY.includes("COLE_SUA_CHAVE_GEMINI_AQUI")) {
             throw new Error("API Key do Gemini não configurada em js/config.js");
         }
@@ -898,7 +970,7 @@ const AppPrincipal = {
                 }
             ],
             "generationConfig": {
-                "responseMimeType": "application/json"
+                "responseMimeType": "application/json" // Pede a resposta em JSON
             }
         };
 
@@ -914,11 +986,13 @@ const AppPrincipal = {
             throw new Error("A IA (Visão) não retornou uma resposta.");
         }
 
+        // Retorna a string JSON (que será parseada)
         return data.candidates[0].content.parts[0].text;
     },
     
     // Cloudinary (V3.0 - Aceita 'folderName')
     uploadFileToCloudinary: async (file, folderName = 'workouts') => {
+        // V2.5: Lê a config do 'window'
         if (!window.CLOUDINARY_CONFIG || !window.CLOUDINARY_CONFIG.cloudName || !window.CLOUDINARY_CONFIG.uploadPreset || window.CLOUDINARY_CONFIG.cloudName.includes("SEU_CLOUD_NAME")) {
             throw new Error("Cloudinary não está configurado em js/config.js");
         }
@@ -926,35 +1000,36 @@ const AppPrincipal = {
         const f = new FormData(); 
         f.append('file', file); 
         f.append('upload_preset', window.CLOUDINARY_CONFIG.uploadPreset); 
+        // Salva na subpasta correta (workouts/ ou profile/)
         f.append('folder', `lerunners/${AppPrincipal.state.currentUser.uid}/${folderName}`);
         
         const r = await fetch(`https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CONFIG.cloudName}/upload`, { method: 'POST', body: f });
         if (!r.ok) throw new Error("Falha no upload para Cloudinary.");
         
         const data = await r.json();
-        return data.secure_url;
+        return data.secure_url; // Retorna a URL segura
     },
     
     // ===================================================================
-    // StravaLogic
+    // 6. StravaLogic (Nova Integração V5.0) - Adicionado a este módulo
     // ===================================================================
     handleStravaConnect: () => {
-        if (typeof window.STRAVA_PUBLIC_CONFIG === 'undefined') {
-            alert("Erro: Configuração do Strava ausente (config.js).");
-            return;
-        }
+        // 1. Monta a URL de Autorização
+        const clientID = window.STRAVA_PUBLIC_CONFIG.clientID;
+        const redirectURI = window.STRAVA_PUBLIC_CONFIG.redirectURI;
         
-        const config = window.STRAVA_PUBLIC_CONFIG;
         const stravaAuthUrl = `https://www.strava.com/oauth/authorize?` +
-            `client_id=${config.clientID}&` +
+            `client_id=${clientID}&` +
             `response_type=code&` +
-            `redirect_uri=${config.redirectURI}&` +
+            `redirect_uri=${redirectURI}&` +
             `approval_prompt=force&` +
-            `scope=read_all,activity:read_all,profile:read_all`;
+            `scope=read_all,activity:read_all,profile:read_all`; // Escopos necessários
 
+        // 2. Redireciona o usuário para o Strava
         window.location.href = stravaAuthUrl;
     },
 
+    // Função que será chamada quando o Strava retornar para app.html
     exchangeStravaCode: async (stravaCode) => {
         const VERCEL_API_URL = window.STRAVA_PUBLIC_CONFIG.vercelAPI;
         const user = AppPrincipal.state.currentUser;
@@ -973,6 +1048,7 @@ const AppPrincipal = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    // Enviando o token do Firebase de forma segura
                     'Authorization': `Bearer ${idToken}` 
                 },
                 body: JSON.stringify({ 
@@ -984,10 +1060,11 @@ const AppPrincipal = {
 
             if (response.ok) {
                 alert("Strava conectado com sucesso! Recarregando...");
-                window.location.href = 'app.html';
+                window.location.href = 'app.html'; // Recarrega para limpar a URL
             } else {
                 console.error("Erro na integração Strava:", result);
                 alert(`Falha ao conectar Strava: ${result.details || result.error}`);
+                // Recarrega sem o código na URL
                 window.location.href = 'app.html';
             }
 
@@ -996,81 +1073,58 @@ const AppPrincipal = {
             alert("Erro de rede ao contatar o backend.");
             window.location.href = 'app.html';
         }
-    },
-    
-    // Injeta a correção do Guardião de Strava no initPlatform
-    AppPrincipal.initPlatformOriginal = AppPrincipal.initPlatform;
-    AppPrincipal.initPlatform = () => {
-        AppPrincipal.initPlatformOriginal();
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const stravaCode = urlParams.get('code');
-        const stravaError = urlParams.get('error');
-
-        if (stravaCode && !stravaError) {
-            
-            AppPrincipal.elements.loader.classList.remove('hidden');
-            AppPrincipal.elements.appContainer.classList.add('hidden');
-            
-            const unsubscribe = AppPrincipal.state.auth.onAuthStateChanged(user => {
-                if (user) { 
-                    if (AppPrincipal.state.currentUser && user.uid === AppPrincipal.state.currentUser.uid) {
-                        unsubscribe();
-                        AppPrincipal.exchangeStravaCode(stravaCode);
-                    }
-                }
-            });
-            
-        } else if (stravaError) {
-            alert(`Conexão Strava Falhou: ${stravaError}.`);
-            window.location.href = 'app.html';
-        }
-    };
-    
-    // Adiciona o botão de conexão Strava no Modal de Perfil
-    AppPrincipal.openProfileModalOriginal = AppPrincipal.openProfileModal;
-    AppPrincipal.openProfileModal = () => {
-        AppPrincipal.openProfileModalOriginal();
-        
-        const modalBody = AppPrincipal.elements.profileModal.querySelector('.modal-body');
-        
-        if (!modalBody.querySelector('#strava-connect-section')) {
-            const stravaSection = document.createElement('div');
-            stravaSection.id = 'strava-connect-section';
-            
-            const editButton = `
-                 <button id="btn-edit-profile" class="btn btn-secondary" style="margin-top: 1rem; margin-bottom: 1rem; width: 100%;">
-                    <i class='bx bx-edit-alt'></i> Editar Perfil
-                </button>
-            `;
-            
-            stravaSection.innerHTML = `
-                ${editButton}
-                <fieldset style="margin-top: 1rem;">
-                    <legend><i class='bx bxl-strava'></i> Integração Strava</legend>
-                    <p style="margin-bottom: 1rem; font-size: 0.9rem;">Conecte sua conta para permitir a leitura de dados pela IA.</p>
-                    <button id="btn-connect-strava" class="btn btn-secondary" style="background-color: var(--strava-orange); color: white;">
-                        <i class='bx bxl-strava'></i> Conectar Strava
-                    </button>
-                </fieldset>
-            `;
-            
-            const logoutButton = modalBody.querySelector('#logout-btn');
-            if (logoutButton) {
-                modalBody.insertBefore(stravaSection, logoutButton);
-            } else {
-                modalBody.appendChild(stravaSection);
-            }
-
-            modalBody.querySelector('#btn-edit-profile').addEventListener('click', AppPrincipal.openEditProfileModal);
-            modalBody.querySelector('#btn-connect-strava').addEventListener('click', AppPrincipal.handleStravaConnect);
-        }
-    };
+    }
 };
 
+// Injeta o Guardião de Callback do Strava no initPlatform
+AppPrincipal.initPlatformOriginal = AppPrincipal.initPlatform;
+AppPrincipal.initPlatform = () => {
+    // Chama a função original
+    AppPrincipal.initPlatformOriginal();
+
+    // Novo Guardião: Verifica se há código do Strava na URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const stravaCode = urlParams.get('code');
+    const stravaError = urlParams.get('error');
+
+    if (stravaCode && !stravaError) {
+        // Se houver código, o app deve trocar o token
+        AppPrincipal.elements.loader.classList.remove('hidden');
+        AppPrincipal.elements.appContainer.classList.add('hidden');
+        AppPrincipal.exchangeStravaCode(stravaCode);
+    } else if (stravaError) {
+        alert(`Conexão Strava Falhou: ${stravaError}.`);
+        window.location.href = 'app.html'; // Limpa a URL
+    }
+};
+
+// Adiciona o botão de conexão Strava no Modal de Perfil (V3.0)
+AppPrincipal.openProfileModalOriginal = AppPrincipal.openProfileModal;
+AppPrincipal.openProfileModal = () => {
+    AppPrincipal.openProfileModalOriginal();
+    
+    const modalBody = AppPrincipal.elements.profileModal.querySelector('.modal-body');
+    if (!modalBody.querySelector('#strava-connect-section')) {
+        const stravaSection = document.createElement('div');
+        stravaSection.id = 'strava-connect-section';
+        stravaSection.innerHTML = `
+            <fieldset style="margin-top: 1rem;">
+                <legend><i class='bx bxl-strava'></i> Integração Strava</legend>
+                <p style="margin-bottom: 1rem; font-size: 0.9rem;">Conecte sua conta para permitir a leitura de dados pela IA.</p>
+                <button id="btn-connect-strava" class="btn btn-secondary" style="background-color: var(--strava-orange); color: white;">
+                    <i class='bx bxl-strava'></i> Conectar Strava
+                </button>
+            </fieldset>
+        `;
+        modalBody.appendChild(stravaSection);
+        
+        modalBody.querySelector('#btn-connect-strava').addEventListener('click', AppPrincipal.handleStravaConnect);
+    }
+};
+// ===================================================================
 
 // ===================================================================
-// 2. AuthLogic (Lógica da index.html - FIX V3.2.7)
+// 2. AuthLogic (Lógica da index.html - V2.4)
 // ===================================================================
 const AuthLogic = {
     auth: null,
@@ -1078,11 +1132,9 @@ const AuthLogic = {
     elements: {},
 
     init: (auth, db) => {
-        console.log("AuthLogic V3.2.7: Inicializado.");
-        
+        console.log("AuthLogic V2.4: Inicializado.");
         AuthLogic.auth = auth;
         AuthLogic.db = db;
-
         AuthLogic.elements = {
             loginForm: document.getElementById('login-form'),
             registerForm: document.getElementById('register-form'),
@@ -1092,37 +1144,22 @@ const AuthLogic = {
             loginErrorMsg: document.getElementById('login-error'),
             registerErrorMsg: document.getElementById('register-error'),
             toggleToRegister: document.getElementById('toggleToRegister'),
-            toggleToLogin: document.getElementById('toggleToLogin'),
-            
-            btnSubmitLogin: document.getElementById('btn-submit-login'),
-            btnSubmitRegister: document.getElementById('btn-submit-register')
+            toggleToLogin: document.getElementById('toggleToLogin')
         };
-        
         AuthLogic.elements.toggleToRegister.addEventListener('click', AuthLogic.handleToggle);
         AuthLogic.elements.toggleToLogin.addEventListener('click', AuthLogic.handleToggle);
         AuthLogic.elements.btnLogoutPending.addEventListener('click', () => AuthLogic.auth.signOut());
-        
-        if(AuthLogic.elements.loginForm) {
-             AuthLogic.elements.loginForm.addEventListener('submit', AuthLogic.handleLogin);
-        }
-        if(AuthLogic.elements.registerForm) {
-             AuthLogic.elements.registerForm.addEventListener('submit', AuthLogic.handleRegister);
-        }
-        
+        AuthLogic.elements.loginForm.addEventListener('submit', AuthLogic.handleLogin);
+        AuthLogic.elements.registerForm.addEventListener('submit', AuthLogic.handleRegister);
         AuthLogic.auth.onAuthStateChanged(AuthLogic.handleLoginGuard);
     },
-    
     showView: (view) => {
-        const { loginForm, registerForm, pendingView, toggleToRegister, toggleToLogin, loginErrorMsg, registerErrorMsg } = AuthLogic.elements;
+        const { loginForm, registerForm, pendingView, toggleToRegister, toggleToLogin } = AuthLogic.elements;
         loginForm.classList.add('hidden');
         registerForm.classList.add('hidden');
         pendingView.classList.add('hidden');
         toggleToRegister.parentElement.classList.add('hidden');
         toggleToLogin.parentElement.classList.add('hidden');
-        
-        loginErrorMsg.textContent = "";
-        registerErrorMsg.textContent = "";
-
         if (view === 'login') {
             loginForm.classList.remove('hidden');
             toggleToRegister.parentElement.classList.remove('hidden');
@@ -1133,26 +1170,21 @@ const AuthLogic = {
             pendingView.classList.remove('hidden');
         }
     },
-    
     handleToggle: (e) => {
         e.preventDefault();
         const view = e.target.id === 'toggleToRegister' ? 'register' : 'login';
         AuthLogic.showView(view);
+        AuthLogic.elements.loginErrorMsg.textContent = "";
+        AuthLogic.elements.registerErrorMsg.textContent = "";
     },
-    
     handleLogin: (e) => {
         e.preventDefault();
         const email = document.getElementById('loginEmail').value;
         const password = document.getElementById('loginPassword').value;
-        const btn = AuthLogic.elements.btnSubmitLogin;
-        
-        AuthLogic.elements.loginErrorMsg.textContent = "";
-
-        if(!email || !password) return;
-
+        const btn = AuthLogic.elements.loginForm.querySelector('button');
         btn.disabled = true;
         btn.textContent = "Verificando...";
-        
+        AuthLogic.elements.loginErrorMsg.textContent = "";
         AuthLogic.auth.signInWithEmailAndPassword(email, password)
             .catch((error) => {
                 btn.disabled = false;
@@ -1164,14 +1196,12 @@ const AuthLogic = {
                 }
             });
     },
-
     handleRegister: (e) => {
         e.preventDefault();
         const name = document.getElementById('registerName').value;
         const email = document.getElementById('registerEmail').value;
         const password = document.getElementById('registerPassword').value;
-        const btn = AuthLogic.elements.btnSubmitRegister;
-        
+        const btn = AuthLogic.elements.registerForm.querySelector('button');
         if (password.length < 6) {
             AuthLogic.elements.registerErrorMsg.textContent = "A senha deve ter no mínimo 6 caracteres.";
             return;
@@ -1180,11 +1210,9 @@ const AuthLogic = {
             AuthLogic.elements.registerErrorMsg.textContent = "O nome é obrigatório.";
             return;
         }
-
         btn.disabled = true;
         btn.textContent = "Enviando...";
         AuthLogic.elements.registerErrorMsg.textContent = "";
-        
         AuthLogic.auth.createUserWithEmailAndPassword(email, password)
             .then((userCredential) => {
                 const user = userCredential.user;
@@ -1206,7 +1234,6 @@ const AuthLogic = {
                 }
             });
     },
-    
     handleLoginGuard: (user) => {
         if (user) {
             const uid = user.uid;
@@ -1239,6 +1266,6 @@ const AuthLogic = {
 };
 
 
-// =l= INICIALIZAÇÃO FINAL =l=
-// O DOMContentLoaded irá chamar a função AppPrincipal.init(), que fará o roteamento.
+// =l= Inicia o Cérebro Principal =l=
+// O DOMContentLoaded vai disparar a função init() do AppPrincipal
 document.addEventListener('DOMContentLoaded', AppPrincipal.init);
