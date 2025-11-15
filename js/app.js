@@ -1,7 +1,6 @@
 /* =================================================================== */
-/* ARQUIVO DE LÓGICA UNIFICADO (V3.2.9 - FINAL ÍNTEGRA 100%)
-/* ARQUITETURA: Refatorada (app.js + panels.js)
-/* FIX DE LOGIN/STRAVA (V3.2.7/8): Estável + Completo.
+/* ARQUIVO DE LÓGICA UNIFICADO (V3.2.9 - ÍNTEGRA TOTAL 100%)
+/* RESTAURAÇÃO: Retorna à lógica de inicialização V2.2, adicionando Strava de forma limpa.
 /* =================================================================== */
 
 // ===================================================================
@@ -57,6 +56,7 @@ const AppPrincipal = {
     
     // Inicia a lógica da plataforma (app.html)
     initPlatform: () => {
+        // Mapeamento completo dos elementos de app.html (para evitar falhas)
         AppPrincipal.elements = {
             loader: document.getElementById('loader'),
             appContainer: document.getElementById('app-container'),
@@ -118,7 +118,7 @@ const AppPrincipal = {
         AppPrincipal.elements.navPlanilhaBtn.addEventListener('click', () => AppPrincipal.navigateTo('planilha'));
         AppPrincipal.elements.navFeedBtn.addEventListener('click', () => AppPrincipal.navigateTo('feed'));
         
-        // Listeners do Modal Feedback
+        // Listeners dos Modais
         AppPrincipal.elements.closeFeedbackModal.addEventListener('click', AppPrincipal.closeFeedbackModal);
         AppPrincipal.elements.feedbackForm.addEventListener('submit', AppPrincipal.handleFeedbackSubmit);
         AppPrincipal.elements.commentForm.addEventListener('submit', AppPrincipal.handleCommentSubmit);
@@ -127,27 +127,23 @@ const AppPrincipal = {
         });
         AppPrincipal.elements.photoUploadInput.addEventListener('change', AppPrincipal.handlePhotoUpload);
 
-        // Listeners Modal Log Atividade (V2.3)
         AppPrincipal.elements.closeLogActivityModal.addEventListener('click', AppPrincipal.closeLogActivityModal);
         AppPrincipal.elements.logActivityForm.addEventListener('submit', AppPrincipal.handleLogActivitySubmit);
         AppPrincipal.elements.logActivityModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.logActivityModal) AppPrincipal.closeLogActivityModal();
         });
 
-        // Listeners Modal Quem Curtiu (V2.3)
         AppPrincipal.elements.closeWhoLikedModal.addEventListener('click', AppPrincipal.closeWhoLikedModal);
         AppPrincipal.elements.whoLikedModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.whoLikedModal) AppPrincipal.closeWhoLikedModal();
         });
 
-        // Listeners Modal Análise IA (V2.6)
         AppPrincipal.elements.closeIaAnalysisModal.addEventListener('click', AppPrincipal.closeIaAnalysisModal);
         AppPrincipal.elements.iaAnalysisModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.iaAnalysisModal) AppPrincipal.closeIaAnalysisModal();
         });
         AppPrincipal.elements.saveIaAnalysisBtn.addEventListener('click', AppPrincipal.handleSaveIaAnalysis);
 
-        // Listeners Modal Perfil (V3.0)
         AppPrincipal.elements.navProfileBtn.addEventListener('click', AppPrincipal.openProfileModal);
         AppPrincipal.elements.closeProfileModal.addEventListener('click', AppPrincipal.closeProfileModal);
         AppPrincipal.elements.profileModal.addEventListener('click', (e) => {
@@ -156,7 +152,6 @@ const AppPrincipal = {
         AppPrincipal.elements.profileForm.addEventListener('submit', AppPrincipal.handleProfileSubmit);
         AppPrincipal.elements.profilePicUpload.addEventListener('change', AppPrincipal.handleProfilePhotoUpload);
 
-        // NOVO (V3.2): Listeners Modal Visualização de Perfil
         AppPrincipal.elements.closeViewProfileModal.addEventListener('click', AppPrincipal.closeViewProfileModal);
         AppPrincipal.elements.viewProfileModal.addEventListener('click', (e) => {
             if (e.target === AppPrincipal.elements.viewProfileModal) AppPrincipal.closeViewProfileModal();
@@ -761,9 +756,7 @@ const AppPrincipal = {
         }
     },
 
-    // ===================================================================
-    // NOVO (V3.2): Funções do Modal de Visualização de Perfil
-    // ===================================================================
+    // ----- Funções do Modal de Visualização de Perfil (V3.2) -----
     openViewProfileModal: (userId) => {
         const { viewProfileModal, viewProfilePic, viewProfileName, viewProfileBio } = AppPrincipal.elements;
         const userCache = AppPrincipal.state.userCache;
@@ -787,9 +780,7 @@ const AppPrincipal = {
     },
 
 
-    // ===================================================================
-    // MÓDULO 4: Funções de IA (V3.0 - Cloudinary atualizado)
-    // ===================================================================
+    // ----- Funções de IA (V3.0 - Cloudinary atualizado) -----
 
     // Lida com upload de foto do treino (V2.6)
     handlePhotoUpload: async (event) => {
