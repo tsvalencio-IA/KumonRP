@@ -1,15 +1,16 @@
-const CACHE_NAME = 'kumon-diario-v7'; // <--- Incrementado de v6 para v7
+const CACHE_NAME = 'kumon-diario-v12'; // <--- ATUALIZADO PARA v12 (CRÍTICO)
 const urlsToCache = [
     './',
     './index.html',
     './css/styles.css',
-    './js/config.js',
-    './js/app.js',
-    './js/auth.js',
+    './js/config.js', // <--- Caminho 'js/' (um 's')
+    './js/app.js',    // <--- Caminho 'js/'
+    './js/auth.js',   // <--- Caminho 'js/'
     './icon.png'
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
         return cache.addAll(urlsToCache);
@@ -20,7 +21,9 @@ self.addEventListener('install', event => {
 self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request).then(response => {
-      return response || fetch(event.request);
+      // Tenta pegar da rede primeiro (para garantir dados novos)
+      // Se falhar (offline), usa o cache.
+      return fetch(event.request).catch(() => caches.match(event.request));
     })
   );
 });
@@ -32,11 +35,10 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
-            // Deleta caches antigos (v6)
-            return caches.delete(cacheName);
+            return caches.delete(cacheName); // Deleta v11 e anteriores
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
